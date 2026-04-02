@@ -1,0 +1,19 @@
+# --- MATLAB Editor Autosaves ---
+*.asv       # Windows default autosave extension
+*.m~        # macOS / Linux default autosave extension
+*.autosave  # General Simulink/MATLAB autosave
+
+# --- Compiled Files and Binaries ---
+*.mex*      # Compiled MEX binaries (platform-specific)
+*.p         # Content-obscured P-code files
+
+# --- Generated Simulation Folders (Simulink/Code Gen) ---
+slprj/      # Simulink generation folder
+sccprj/     # Shared code generation folder
+codegen/    # MATLAB Coder output
+*.slxc      # Simulink cache files
+
+# --- Project & App Metadata ---
+*.mlappinstall
+*.mltbx
+.MATLABDriveTag
