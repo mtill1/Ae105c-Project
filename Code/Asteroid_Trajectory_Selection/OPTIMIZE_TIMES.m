@@ -6,9 +6,9 @@ function optimized_output = OPTIMIZE_TIMES(A_ID_1, A_ID_2, A_ID_3, ...
     DAY = 24 * HOUR;
     WEEK = 7 * DAY;
     MONTH = 4 * WEEK;
-    YEAR = 12*MONTH;
+    YEAR = 12 * MONTH;
     
-    MAX_STAYTIME = 6 * MONTH;
+    MAX_STAYTIME = YEAR;
     MIN_STAYTIME = 3 * MONTH;
     
     AVERAGE_STAYTIME = mean([MIN_STAYTIME, MAX_STAYTIME]);

@@ -1,1 +1,1 @@
-FLIGHTPATH_ANIMATION(asteroid_optimized_data(5, 3, 10), asteroid_list, 5, 3, 10, 8, "TEST.mp4");
+FLIGHTPATH_ANIMATION(asteroid_optimized_data(8, 5, 10), asteroid_list, 8, 5, 10, 8, "TEST.mp4");
