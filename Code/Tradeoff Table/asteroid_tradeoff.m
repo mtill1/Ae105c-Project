@@ -157,10 +157,10 @@ score_dv     = zeros(n, 1);              % placeholder — set to 0, update afte
 %% =========================================================================
 %  SECTION 8 — WEIGHTED TOTAL SCORE  (out of 10)
 % =========================================================================
-W_mass   = 0.10;
+W_mass   = 0.13;
 W_radius = 0.10;
 W_ecc    = 0.15;
-W_inc    = 0.15;
+W_inc    = 0.15-0.03;
 W_sma    = 0.05;
 W_rot    = 0.05;
 W_sci    = 0.10;
@@ -254,11 +254,13 @@ out = sortrows(out, 'Total_WeightedScore', 'descend');
 
 writetable(out, 'asteroid_tradeoff.csv');
 
+N = 40;
+
 fprintf('Done.  asteroid_tradeoff.csv written (%d rows).\n\n', height(out));
-fprintf('Top 20 candidates:\n');
+fprintf('Top %d candidates:\n', N);
 fprintf('%-42s  %-30s  %6s\n', 'Name', 'Class', 'Score');
 fprintf('%s\n', repmat('-', 1, 82));
-for k = 1 : min(20, height(out))
+for k = 1 : min(N, height(out))
     fprintf('%-42s  %-30s  %6.4f\n', ...
         out.Name_DecRadius{k}, out.Class_Composition_SMASSII{k}, ...
         out.Total_WeightedScore(k));
