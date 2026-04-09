@@ -53,5 +53,5 @@ function GENERATE_OPTIMIZED_DATA(asteroid_list, m_1, m_2, m_3, launch_utc_min, l
 
     close(wb);
     
-    save(sprintf("asteroid_data_%d_%d_%d.mat", m_1, m_2, m_3), "asteroid_optimized_data");
+    save(sprintf("./optimal_asteroid_paths/asteroid_data_%d_%d_%d.mat", m_1, m_2, m_3), "asteroid_optimized_data");
 end
