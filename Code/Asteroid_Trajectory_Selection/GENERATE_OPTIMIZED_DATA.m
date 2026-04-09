@@ -1,4 +1,4 @@
-function GENERATE_OPTIMIZED_DATA(asteroid_list, m_1, m_2, m_3, launch_utc_min, launch_utc_max)
+function asteroid_optimized_data = GENERATE_OPTIMIZED_DATA(asteroid_list, m_1, m_2, m_3, launch_utc_min, launch_utc_max)
     wb = waitbar(0, 'Starting Optimization...', 'Name', sprintf('Ms: %d, %d, %d', m_1, m_2, m_3));
 
     NUM_ASTEROIDS = length(asteroid_list);
