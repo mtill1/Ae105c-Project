@@ -278,17 +278,19 @@ score_sci    = pctScore(sci_combined,      +1);
 score_dv     = zeros(n, 1);
 % Replace line above with pctScore(delta_v_km_s, -1) after trajectory runs
 
-%% =========================================================================
+%% ========================================================================
 %  SECTION 9 — WEIGHTED TOTAL
 % =========================================================================
 W_mass   = 0.12;
-W_radius = 0.13;
-W_ecc    = 0.07;
-W_inc    = 0.15;
-W_sma    = 0.03;
-W_rot    = 0.05;
-W_sci    = 0.15;
+W_radius = 0.12;
+W_ecc    = 0.06;
+W_inc    = 0.20;
+W_sma    = 0.02;
+W_rot    = 0.04;
+W_sci    = 0.14;
 W_dv     = 0.30;
+
+
 
 total = W_mass   * score_mass   + ...
         W_radius * score_radius + ...
