@@ -15,8 +15,8 @@ function optimized_output = OPTIMIZE_GREEDY_TIMES(A_ID_1, A_ID_2, A_ID_3, ...
 
     N_RES = 2;
 
-    LOWER_BOUND = [0, 2*WEEK, 2*WEEK]/YEAR;
-    UPPER_BOUND = [LAUNCH_RANGE(2) - LAUNCH_RANGE(1), 1.5*YEAR, 1.5*YEAR]/YEAR;
+    LOWER_BOUND = [0, 0.5*YEAR, 0.5*YEAR]/YEAR;
+    UPPER_BOUND = [LAUNCH_RANGE(2) - LAUNCH_RANGE(1), 2.5*YEAR, 2.5*YEAR]/YEAR;
 
     DELTA_GUESS = (UPPER_BOUND - LOWER_BOUND)./N_RES;
 
@@ -43,7 +43,7 @@ function optimized_output = OPTIMIZE_GREEDY_TIMES(A_ID_1, A_ID_2, A_ID_3, ...
     for i = 1:3
         %fprintf("BODIES %d, %s", i, bodies_strs(i));
         min_dv_total = Inf;
-        LOWER_BOUND = [0, 2*WEEK, 2*WEEK]/YEAR;
+        LOWER_BOUND = [0, 0.5*YEAR, 0.5*YEAR]/YEAR;
         UPPER_BOUND = [current_launch_range(2) - current_launch_range(1), 3*YEAR, 3*YEAR]/YEAR;
         for n_1 = 1:N_RES
             for n_2 = 1:1
