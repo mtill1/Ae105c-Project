@@ -1,27 +1,58 @@
 function asteroid_list = LOAD_KERNELS(BSP_FOLDER_NAME)
-    path_to_generic_kernels = 'C:\Users\SPLog\OneDrive\Documents\Ae105A\kernels';
-    path_to_mice            = 'C:\Users\SPLog\OneDrive\Documents\Ae105A\mice';
-    addpath([path_to_mice,'\src\mice']);
-    addpath([path_to_mice,'\lib']);
+    % 1. IDENTIFY USER AND OPERATING SYSTEM
+    [~, username] = system('whoami');
+    username = strtrim(username); % Clean up any hidden spaces
 
-    cspice_furnsh( [path_to_generic_kernels,'\lsk\naif0012.tls.pc']);
-    cspice_furnsh( [path_to_generic_kernels,'\spk\satellites\jup310.bsp']);
-    cspice_furnsh( [path_to_generic_kernels,'\spk\planets\de430.bsp']);
-    cspice_furnsh( [path_to_generic_kernels,'\pck\gm_de431.tpc']);
-    cspice_furnsh( [path_to_generic_kernels,'\pck\pck00010.tpc']);
-
-    bsp_files = dir(join([BSP_FOLDER_NAME, "\*.bsp"]));
-
-    asteroid_list(length(bsp_files)) = struct('ID', [], 'NAME', []);
-
-    for i = 1:length(bsp_files)
-        formatted_bsp_file = char(join([BSP_FOLDER_NAME, "\", bsp_files(i).name], ""));
-        cspice_furnsh(formatted_bsp_file);
-
-        % 3. Get the IDs from the SPK
-        [id] = cspice_spkobj( formatted_bsp_file, 1000 );
-        asteroid_list(i).ID = id;
-        asteroid_list(i).NAME = bsp_files(i).name(1:end-4);
+    if contains(username, 'marissatill') || ismac
+        % --- MARISSA'S MAC CONFIGURATION ---
+        path_to_generic_kernels = '/Users/marissatill/Downloads/junior year/fall/ae105a/data';
+        
+        % so MATLAB can find the cspice functions.
+        path_to_mice_mac = '/Users/marissatill/Downloads/junior year/fall/ae105a/mice'; 
+        addpath(fullfile(path_to_mice_mac, 'src', 'mice'));
+        addpath(fullfile(path_to_mice_mac, 'lib'));
+        
+        % Set filename for leapseconds (Mac usually doesn't use .pc)
+        lsk_file = 'naif0012.tls';
+    else
+        % --- ORIGINAL WINDOWS CONFIGURATION ---
+        path_to_generic_kernels = 'C:\Users\SPLog\OneDrive\Documents\Ae105A\kernels';
+        path_to_mice            = 'C:\Users\SPLog\OneDrive\Documents\Ae105A\mice';
+        
+        addpath(fullfile(path_to_mice, 'src', 'mice'));
+        addpath(fullfile(path_to_mice, 'lib'));
+        
+        % The original code used the .pc extension for Windows
+        lsk_file = 'naif0012.tls.pc';
     end
 
+    % 2. LOAD UNIVERSAL KERNELS
+    % fullfile() automatically handles / for Mac and \ for Windows
+    cspice_furnsh(fullfile(path_to_generic_kernels, 'lsk', lsk_file));
+    cspice_furnsh(fullfile(path_to_generic_kernels, 'spk', 'satellites', 'jup310.bsp'));
+    cspice_furnsh(fullfile(path_to_generic_kernels, 'spk', 'planets', 'de430.bsp'));
+    cspice_furnsh(fullfile(path_to_generic_kernels, 'pck', 'gm_de431.tpc'));
+    cspice_furnsh(fullfile(path_to_generic_kernels, 'pck', 'pck00010.tpc'));
+
+    % 3. LOAD PROJECT-SPECIFIC KERNELS (Asteroids/Clipper)
+    % Find all .bsp files in the provided folder
+    bsp_files = dir(fullfile(BSP_FOLDER_NAME, '*.bsp'));
+    
+    % Pre-allocate the structure array
+    asteroid_list(length(bsp_files)) = struct('ID', [], 'NAME', []);
+    
+    for i = 1:length(bsp_files)
+        % Construct the full path to the specific .bsp file
+        formatted_bsp_file = fullfile(bsp_files(i).folder, bsp_files(i).name);
+        
+        % Load it into the SPICE system
+        cspice_furnsh(formatted_bsp_file);
+        
+        % Extract the ID from the SPK file
+        [id] = cspice_spkobj(formatted_bsp_file, 1000);
+        
+        % Store results
+        asteroid_list(i).ID = id;
+        asteroid_list(i).NAME = bsp_files(i).name(1:end-4); % Remove '.bsp'
+    end
 end
