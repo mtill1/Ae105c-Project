@@ -4,74 +4,154 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Asteroid mission trajectory optimization system for AE 105c (Caltech/Pomona). Selects optimal 3-asteroid visitation sequences launched from Earth, minimizing total delta-V (fuel cost). Also includes a Mars transfer variant (Earth -> Asteroid -> Mars).
+Asteroid mission trajectory optimization for Ae105c. Designs a spacecraft mission from Earth visiting **3 asteroids sequentially**, minimizing total delta-v (fuel cost). Two mission architectures:
+
+1. **Direct**: Earth -> Asteroid 1 -> Asteroid 2 -> Asteroid 3
+2. **Mars flyby**: Earth -> Mars (gravity assist) -> A1 -> A2 -> A3
+
+The codebase was originally MATLAB, now **fully ported to Python** in `Python_Consolidated/`. The MATLAB code in `Code/` is legacy and no longer maintained.
+
+## Repository Structure
+
+```
+Ae105c-Project/
+├── Python_Consolidated/          # Active Python codebase (6 files, ~3000 lines)
+│   ├── core.py                   # Constants, pykep Lambert/propagation wrappers, SPICE loading
+│   ├── optimization.py           # Delta-v computation, scoring, DE optimizer, beam search
+│   ├── greedy.py                 # Greedy/flyby algorithm (legacy approach)
+│   ├── visualization.py          # Flightpath animation, orbit plotting
+│   ├── scripts.py                # Runner entry points for all workflows
+│   ├── tradeoff.py               # Asteroid science/physical scoring (standalone)
+│   └── requirements.txt
+├── NOTABLE_ASTEROID_BSPs/        # 50 asteroid ephemeris files (.bsp)
+├── SPICE_BSPs/                   # Larger asteroid pool (49 BSPs)
+├── Renders/Asteroid_Plots/       # Generated images and GIFs (numbered 01-09)
+├── asteroid_tradeoff.csv         # Ranked asteroid table (407 asteroids)
+├── Code/                         # Legacy MATLAB code (not maintained)
+└── CLAUDE.md
+```
 
 ## Prerequisites
 
-- **MATLAB** with Optimization Toolbox (fmincon) and ODE solvers (ode113)
-- **MICE** (MATLAB Interface to CSPICE) — JPL's SPICE toolkit for ephemeris computations
-- Generic SPICE kernels: `naif0012.tls`, `de430.bsp`, `jup310.bsp`, `gm_de431.tpc`, `pck00010.tpc`
-- MICE and kernel paths are user/OS-specific, configured in `LOAD_KERNELS.m` (detects username to set paths)
+- **Python 3.10+** (3.13 works for everything except pykep)
+- **SPICE kernels** at `/Users/rebnoob/Documents/ae105/generic_kernels/` with:
+  - `lsk/naif0012.tls`, `spk/planets/de430.bsp`, `spk/satellites/jup310.bsp`
+  - `pck/gm_de431.tpc`, `pck/pck00010.tpc`
+- **pykep** (ESA): Used for Lambert solving, orbit propagation, flyby computation. Note: no wheel for Python 3.13 yet — code falls back gracefully where needed.
+- **spiceypy**: Always required for SPICE kernel management and asteroid ephemerides.
+
+Install dependencies:
+```bash
+cd Python_Consolidated
+pip install -r requirements.txt
+```
 
 ## Running the Code
 
-All scripts must be run from the **repository root directory** with MATLAB's working directory set there. The `NOTABLE_ASTEROID_BSPs/` and `SPICE_BSPs/` folders must be accessible from the working directory.
+All scripts run from the **repository root** (not from `Python_Consolidated/`). The `NOTABLE_ASTEROID_BSPs/` folder must be in the working directory.
 
-### Three main workflows:
+### Recommended workflows (in `scripts.py`):
 
-1. **Exhaustive optimization**: `asteroid_selector.m` -> `find_best_path.m`
-   - Runs fmincon over all (i,j,k) asteroid triplets, saves results to `optimal_asteroid_paths/asteroid_data_{m1}_{m2}_{m3}.mat`
-   - `find_best_path.m` loads results and identifies top 10 lowest delta-V paths
+```python
+from scripts import *
 
-2. **Greedy heuristic**: `Code/Asteroid_Trajectory_Selection/GREEDY/greedy_selector.m`
-   - Faster but suboptimal; outputs to `greedy_asteroid_paths/` and `asteroid_optimized_data_table.csv`
+# 1. Two-level optimization (RECOMMENDED — best quality results)
+#    Coarse pass on all N^3 triplets, then fine-tune top 50
+results = run_two_level_optimize()
 
-3. **Mars transfer**: `mars_transfer_selector.m`
-   - Earth -> Asteroid -> Mars trajectory variant
+# 2. With science weighting (70% delta-v, 30% science value)
+results = run_two_level_optimize(science_csv='asteroid_tradeoff.csv', alpha=0.7)
+
+# 3. Beam search (structured multi-stage, good for large pools)
+results = run_beam_search(beam_width=15)
+
+# 4. Brute-force N^3 (original method, slow but thorough)
+results = run_asteroid_selector()
+
+# 5. Mars flyby variant
+results = run_mars_transfer_selector()
+
+# 6. Visualization
+run_graphing_notable_asteroids()
+```
 
 ## Architecture
 
-### Core pipeline (executed in sequence):
+### core.py — Foundation layer
 
-```
-LOAD_KERNELS(bsp_folder)          — Initialize SPICE, load ephemeris kernels, return asteroid list
-    |
-GENERATE_OPTIMIZED_DATA(...)      — Exhaustive loop over all asteroid triplets
-    |
-    +-- OPTIMIZE_TIMES(...)       — fmincon optimization for one triplet, grid search over initial guesses
-        |
-        +-- SCORE_PATHS(...)      — Objective function: calls COMPUTE_PATH_DELTAV, returns scalar delta-V
-            |
-            +-- COMPUTE_PATH_DELTAV(...)  — 3 Lambert solves, computes 5 maneuver delta-Vs
-                |
-                +-- lambert(...)          — Robust Lambert solver (Izzo + Lancaster/Gooding, ~800 lines)
-```
+Wraps pykep and spiceypy behind a clean interface. All units: **km, km/s, km^3/s^2**.
 
-### Key design decisions:
+| Function | Purpose |
+|----------|---------|
+| `solve_lambert(r1, r2, tof_days, m, mu)` | Wraps `pk.lambert_problem`. Returns (V1, V2, exitflag). |
+| `solve_lambert_best(r1, r2, tof_days, mu)` | Tries m=0,1,2 revolutions + both directions, returns best. |
+| `two_body_sim(t_final, x0, mu)` | Wraps `pk.propagate_lagrangian`. Returns (X, T) arrays. |
+| `compute_flyby_dv(v_in, v_out, v_planet, mu, r)` | Wraps `pk.fb_dv`. Returns powered flyby delta-v. |
+| `load_kernels(bsp_folder, generic_path)` | Loads SPICE kernels, returns asteroid list. |
+| `get_state(body_id, et)` | Returns (r_km, v_km_s) via spiceypy. |
 
-- **Time representation**: All times are SPICE ET (seconds past J2000). Convert with `cspice_str2et` / `cspice_et2utc`.
-- **M parameter**: Number of complete orbital revolutions for each Lambert arc (0 = direct transfer). Different M values produce different `.mat` output files.
-- **Optimization grid**: `OPTIMIZE_TIMES` uses a Chebyshev-spaced grid of initial guesses (controlled by `N_RES` vector) and keeps the best fmincon result.
-- **Delta-V total**: Sum of 5 maneuver magnitudes (arrival/departure at each asteroid, excluding Earth departure from the total in `COMPUTE_PATH_DELTAV` but tracked separately).
-- **Lambert failure handling**: Returns `delta_v_total = 1e3` as a penalty when the solver doesn't converge.
+**Constants**: `DAY=86400s`, `MONTH=30.4375*DAY`, `YEAR=365.25*DAY`, `MAX_MISSION_DURATION=14*YEAR`, `MU_SUN`
 
-### Parallel structure for Mars variant:
-`GENERATE_MARS_TRANSFER_OPTIMIZED` / `OPTIMIZE_MARS_TIMES` / `COMPUTE_MARS_PATH_DELTAV` / `SCORE_PATHS_MARS` / `UNPACK_MARS_INPUT` mirror the standard pipeline.
+### optimization.py — Optimization engine
 
-### Greedy variant:
-`GREEDY/` subfolder mirrors the pipeline with `_GREEDY` suffixed functions. Uses `GENERATE_GREEDY_OPTIMIZED_DATA` which builds paths incrementally rather than evaluating all triplets.
+| Function | Purpose |
+|----------|---------|
+| `compute_path_deltav(...)` | 3 Lambert solves for a triplet. Returns dict with all delta-v components. **Includes launch dv in total.** |
+| `score_paths(input_vec, ...)` | Objective function. Penalizes missions >14yr with 1e3. |
+| `optimize_times(...)` | `scipy.optimize.differential_evolution` on 6D time space. |
+| `optimize_times_quick(...)` | Fast coarse version (30 iters) for two-level first pass. |
+| `two_level_optimize(...)` | Coarse filter all triplets, fine-optimize top-N. Accepts science scores. |
+| `beam_search(...)` | Multi-stage K-best search. Keeps top-K at each leg. |
+| `generate_optimized_data(...)` | Brute-force N^3 loop (legacy). |
 
-### Visualization:
-- `FLIGHTPATH_ANIMATION.m` / `GREEDY_FLIGHTPATH_ANIMATION.m` — renders `.mp4` trajectory videos
-- `GRAPH_ASTEROID_FLIGHTPATH.m` / `GRAPH_ASTEROIDS.m` — static plots
-- `TWO_BODY_SIM.m` — numerical propagator for orbit arcs (ode113, Sun gravity only)
+### greedy.py — Greedy algorithm (legacy, suboptimal)
 
-### Tradeoff analysis (standalone):
-`Code/Tradeoff Table/asteroid_tradeoff.m` scores ~1000 asteroids from JPL SBDB data (`sbdb_query_results.csv`) using weighted criteria: delta-V (30%), eccentricity (15%), inclination (15%), science potential (10%), mass (10%), radius (10%), SMA (5%), rotation (5%). Uses Chebyshev-spaced bins and taxonomy-based density estimates.
+Sequential 3-leg optimization with Earth/Mars/direct flyby options. Per commit `9afb21a`: "gives too suboptimal results." Prefer `beam_search` or `two_level_optimize`.
+
+### visualization.py — Plotting and animation
+
+- `flightpath_animation(...)` — 3D MP4 video of a trajectory (requires FFmpeg)
+- `graph_asteroids(...)` — Animated asteroid orbit video
+- `graph_asteroid_flightpath(...)` — Static 3D trajectory plot
+
+### tradeoff.py — Asteroid ranking (standalone, no SPICE needed)
+
+Reads `sbdb_query_results.csv` from JPL SBDB and outputs `asteroid_tradeoff.csv`. Two versions:
+- `run_tradeoff_v1()` — Chebyshev-bin scoring
+- `run_tradeoff_v3()` — Enhanced two-component science score (characterization 40% + interest 60%), with manual flags for active asteroids, ice, radar-ambiguous M-types, visited targets
+
+## Key Design Decisions
+
+- **Optimizer**: `scipy.optimize.differential_evolution` (global, multimodal) with `polish=True` (L-BFGS-B refinement). Replaces the old 180-point Chebyshev grid.
+- **Time system**: SPICE ET (seconds past J2000). Parsed with `spiceypy.str2et()`.
+- **Units**: km / km/s / km^3/s^2 throughout. Pykep (SI) conversions inside core.py.
+- **Lambert failure**: Returns `delta_v_total = 1e3` as penalty.
+- **Mission duration**: Hard cap at 14 years. Score functions return 1e3 for violations.
+- **Delta-v total**: Sum of **all 6 maneuver norms** including Earth departure.
+- **Science integration**: `two_level_optimize` and `beam_search` accept `science_scores` + `alpha`. Example: `alpha=0.7` = 70% delta-v + 30% science.
 
 ## Conventions
 
-- Functions are UPPERCASE (`LOAD_KERNELS`, `OPTIMIZE_TIMES`); scripts and variables are lowercase
-- BSP kernel files are named after their asteroid (e.g., `Ceres.bsp`)
-- Output `.mat` files are named by M parameters: `asteroid_data_{m1}_{m2}_{m3}.mat`
+- All active Python code lives in `Python_Consolidated/` (6 files, no subpackages)
+- Cross-file imports: `from core import ...`, `from optimization import ...`
+- Asteroid BSPs named after the asteroid: `THEMIS.bsp`, `HYGIEA.bsp`
+- Output saved to `optimal_asteroid_paths/` as `.pkl` (pickle)
+- Renders saved to `Renders/Asteroid_Plots/`, numbered (01_, 02_, ...)
 - Reference frame: `ECLIPJ2000`, observer: `10` (Sun), aberration: `NONE`
+
+## SPICE Kernel Paths
+
+Generic kernels: `/Users/rebnoob/Documents/ae105/generic_kernels/`
+
+```python
+asteroid_list = load_kernels("NOTABLE_ASTEROID_BSPs",
+                             "/Users/rebnoob/Documents/ae105/generic_kernels")
+```
+
+## Asteroid Pools
+
+| Pool | Count | Location |
+|------|-------|----------|
+| Notable (primary) | 50 | `NOTABLE_ASTEROID_BSPs/` |
+| Extended | 49 | `SPICE_BSPs/` |
+| Science-ranked | 407 | `asteroid_tradeoff.csv` |

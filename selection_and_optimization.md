@@ -35,11 +35,11 @@ The pipeline has four stages:
 
 **Key files:**
 - `Python_Consolidated/tradeoff.py` -- Stage 2 scoring
-- `Python_Consolidated/optimization.py` -- Stage 3 & 4 optimization
-- `Python_Consolidated/core.py` -- Lambert solver, SPICE utilities, constants
-- `Python_Consolidated/udp.py` -- pagmo UDP classes (MBH + MGA-DSM)
-- `Python_Consolidated/beam_search.py` -- composition-aware beam search
+- `Python_Consolidated/optimization.py` -- Stage 3 & 4 (includes beam search, two-level, delta-v computation)
+- `Python_Consolidated/core.py` -- Lambert solver (pykep), SPICE utilities, constants
 - `Python_Consolidated/scripts.py` -- runner entry points
+- `Python_Consolidated/visualization.py` -- trajectory animation and orbit plotting
+- `Python_Consolidated/greedy.py` -- legacy greedy algorithm
 
 ---
 
@@ -180,11 +180,13 @@ Earth --[leg 1]--> A1 --[stay]--> A1 --[leg 2]--> A2 --[stay]--> A2 --[leg 3]-->
 
 ### 4.2 Objective Function
 
-**Total delta-V** = sum of 5 impulsive maneuvers:
+**Total delta-V** = sum of 6 impulsive maneuvers:
 
 ```
-dV_total = |dV_A1_arrive| + |dV_A1_depart| + |dV_A2_arrive| + |dV_A2_depart| + |dV_A3_arrive|
+dV_total = |dV_launch| + |dV_A1_arrive| + |dV_A1_depart| + |dV_A2_arrive| + |dV_A2_depart| + |dV_A3_arrive|
 ```
+
+Total includes Earth departure delta-V (all 6 maneuvers).
 
 Each maneuver is the velocity difference between the Lambert transfer arc and the body's actual heliocentric velocity:
 
@@ -192,8 +194,6 @@ Each maneuver is the velocity difference between the Lambert transfer arc and th
 dV_arrive = V_lambert_arrival - V_asteroid
 dV_depart = V_lambert_departure - V_asteroid
 ```
-
-Earth departure delta-V is computed but excluded from the total (launch vehicle provides C3).
 
 **Penalty handling:** Lambert solver failure returns dV = 1000 km/s. Mission duration violations also return 1000 km/s.
 
@@ -263,7 +263,7 @@ Each leg is split at fraction eta:
 
 This is the standard MGA-DSM formulation (Vasile & De Pascale, 2006). When eta -> 0 or 1, the DSM vanishes and the solution reduces to pure Lambert.
 
-Implemented in `udp.py` as `AsteroidTripletDSM_UDP` for use with pagmo's Monotonic Basin Hopping.
+**Note:** This MGA-DSM formulation is not currently active in the codebase. It was an experimental addition (previously in `udp.py`) that required pygmo, which is not installed. The description is retained here for documentation purposes only.
 
 ---
 
@@ -312,11 +312,10 @@ Build sequences stage-by-stage, keeping only the top-k (beam width) partial sequ
 
 - **Complexity:** O(N * k * 3) single-leg optimizations
 - **For N=50, k=10:** ~1,500 leg evaluations vs 117,600 triplet evaluations
-- **Composition filtering:** `beam_search.py` supports constraining results to include asteroids from each specified composition class (e.g., `{'C', 'S', 'M'}`)
+- **Science weighting:** The `alpha` parameter blends delta-V and science scores when ranking candidates.
 
-Two implementations exist:
-- `optimization.beam_search(...)` -- uses DE for each leg, includes science weighting
-- `beam_search.beam_search_optimize(...)` -- uses quick Lambert screening + full optimization refinement, supports composition filtering
+The active implementation is in `optimization.py`:
+- `optimization.beam_search(...)` -- uses DE for each leg, includes science weighting via `science_scores` and `alpha` parameters
 
 ### 5.4 Comparison of Approaches
 
@@ -334,8 +333,7 @@ Two implementations exist:
 
 | Package | Version | Purpose |
 |---------|---------|---------|
-| pykep | 2.6 | Lambert solver, orbit propagation, flyby dV |
-| pygmo | 2.19 | Monotonic Basin Hopping, island-model parallelism |
+| pykep | 3.x (requires Python < 3.13) | Lambert solver, orbit propagation, flyby dV (optional -- falls back to spiceypy-only if not installed) |
 | spiceypy | latest | SPICE kernel management, ephemeris queries |
 | scipy | latest | `differential_evolution` optimizer |
 | numpy | latest | Numerical arrays |
@@ -387,7 +385,7 @@ MINUTE = 60
 HOUR   = 3600
 DAY    = 86400
 WEEK   = 604800
-MONTH  = 2419200      # 4 weeks
+MONTH  = 2629800      # 30.4375 days (365.25/12)
 YEAR   = 31557600     # 365.25 days (Julian year)
 MAX_MISSION_DURATION = 14 * YEAR  # 2035 launch + 14yr < 2050 BSP coverage
 ```
@@ -443,7 +441,8 @@ All commands assume the working directory is the repository root.
 
 ```bash
 # Install dependencies
-mamba install -c conda-forge pykep pygmo spiceypy
+pip install numpy scipy spiceypy matplotlib tqdm pandas imageio
+pip install pykep  # optional, requires Python < 3.13
 
 # Ensure generic SPICE kernels are linked
 ln -sf /path/to/generic_kernels ./generic_kernels
@@ -481,17 +480,18 @@ results = two_level_optimize(
 )
 ```
 
-### 8.4 Run Beam Search with Composition Filter
+### 8.4 Run Beam Search
 
 ```python
-from beam_search import beam_search_optimize
+from optimization import beam_search
 
-results = beam_search_optimize(
+results = beam_search(
     asteroid_list,
     launch_utc_min='Jan 1 12:00:00 UTC 2027',
     launch_utc_max='Dec 31 12:00:00 UTC 2035',
     beam_width=15,
-    composition_filter={'C', 'S', 'M'}
+    science_scores=science_scores,  # dict of asteroid name -> score
+    alpha=0.7                       # 70% dV + 30% science
 )
 ```
 
