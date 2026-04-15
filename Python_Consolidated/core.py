@@ -24,7 +24,7 @@ WEEK = 7 * DAY
 MONTH = 30.4375 * DAY       # average month (365.25/12)
 YEAR = 365.25 * DAY          # Julian year
 
-MAX_MISSION_DURATION = 15 * YEAR  # hard cap on total mission time
+MAX_MISSION_DURATION = 14 * YEAR  # hard cap (must stay within BSP coverage to 2050)
 
 # Unit conversion factors
 _KM2M = 1e3
@@ -60,30 +60,31 @@ def solve_lambert(r1_km, r2_km, tof_days, m, mu_km3s2):
     tof_sec = abs(tof_days) * DAY
     mu_m3s2 = mu_km3s2 * 1e9
 
-    cw = (tof_days < 0)
+    cw = bool(tof_days < 0)
     multi_revs = abs(int(m))
 
     try:
         lp = pk.lambert_problem(
-            r0=list(r1_m), r1=list(r2_m),
-            tof=tof_sec, mu=mu_m3s2,
-            cw=cw, multi_revs=multi_revs,
+            [float(x) for x in r1_m], [float(x) for x in r2_m],
+            float(tof_sec), float(mu_m3s2),
+            cw, multi_revs,
         )
+
+        v1_all = lp.get_v1()
+        v2_all = lp.get_v2()
 
         if multi_revs == 0:
             idx = 0
         else:
-            # pykep returns [0]=zero-rev, then pairs for each revolution
-            # right branch: odd indices, left branch: even indices
             if m > 0:
                 idx = 2 * multi_revs - 1
             else:
                 idx = 2 * multi_revs
-            if idx >= len(lp.v0):
+            if idx >= len(v1_all):
                 return np.zeros(3), np.zeros(3), -1
 
-        v1 = np.array(lp.v0[idx]) * _M2KM
-        v2 = np.array(lp.v1[idx]) * _M2KM
+        v1 = np.array(v1_all[idx]) * _M2KM
+        v2 = np.array(v2_all[idx]) * _M2KM
         return v1, v2, 1
 
     except Exception:
@@ -142,7 +143,7 @@ def propagate_two_body(r_km, v_km_s, tof_sec, mu_km3s2):
     v_ms = list(np.asarray(v_km_s, dtype=float) * _KM2M)
     mu_m3s2 = mu_km3s2 * 1e9
 
-    rf, vf = pk.propagate_lagrangian(rv=[r_m, v_ms], tof=tof_sec, mu=mu_m3s2)
+    rf, vf = pk.propagate_lagrangian(r0=r_m, v0=v_ms, tof=float(tof_sec), mu=mu_m3s2)
     return np.array(rf) * _M2KM, np.array(vf) * _M2KM
 
 
@@ -158,10 +159,9 @@ def two_body_sim(t_final, x_0, mu_km3s2, n_steps=200):
 
     tofs = np.linspace(0, t_final, n_steps).tolist()
 
-    results = pk.propagate_lagrangian_grid(rv=[r_m, v_ms], tofs=tofs, mu=mu_m3s2)
-
-    X = np.zeros((len(results), 6))
-    for i, (rf, vf) in enumerate(results):
+    X = np.zeros((len(tofs), 6))
+    for i, tof in enumerate(tofs):
+        rf, vf = pk.propagate_lagrangian(r0=r_m, v0=v_ms, tof=float(tof), mu=mu_m3s2)
         X[i, 0:3] = np.array(rf) * _M2KM
         X[i, 3:6] = np.array(vf) * _M2KM
 

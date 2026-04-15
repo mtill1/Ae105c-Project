@@ -144,7 +144,7 @@ def score_paths_mars(input_vec, a_id_1, a_id_2, a_id_3, launch_range,
 def optimize_times(a_id_1, a_id_2, a_id_3, launch_range, m_1, m_2, m_3):
     bounds = list(zip(
         np.array([0, 2*WEEK, 3*MONTH, 2*WEEK, 3*MONTH, 2*WEEK]) / YEAR,
-        np.array([launch_range[1]-launch_range[0], 8*YEAR, YEAR, 8*YEAR, YEAR, 8*YEAR]) / YEAR))
+        np.array([launch_range[1]-launch_range[0], 5*YEAR, YEAR, 5*YEAR, YEAR, 5*YEAR]) / YEAR))
 
     res = differential_evolution(
         lambda x: score_paths(x, a_id_1, a_id_2, a_id_3, launch_range, m_1, m_2, m_3),
@@ -161,7 +161,7 @@ def optimize_times_quick(a_id_1, a_id_2, a_id_3, launch_range, m_1, m_2, m_3):
     """Fast coarse optimization for two-level search first pass."""
     bounds = list(zip(
         np.array([0, 2*WEEK, 3*MONTH, 2*WEEK, 3*MONTH, 2*WEEK]) / YEAR,
-        np.array([launch_range[1]-launch_range[0], 8*YEAR, YEAR, 8*YEAR, YEAR, 8*YEAR]) / YEAR))
+        np.array([launch_range[1]-launch_range[0], 5*YEAR, YEAR, 5*YEAR, YEAR, 5*YEAR]) / YEAR))
     res = differential_evolution(
         lambda x: score_paths(x, a_id_1, a_id_2, a_id_3, launch_range, m_1, m_2, m_3),
         bounds, maxiter=30, tol=0.1, seed=42, polish=False, popsize=5, updating='deferred')
@@ -171,7 +171,7 @@ def optimize_times_quick(a_id_1, a_id_2, a_id_3, launch_range, m_1, m_2, m_3):
 def optimize_mars_times(a_id_1, a_id_2, a_id_3, launch_range, m_1, m_2, m_3, m_mars):
     bounds = list(zip(
         np.array([0, 3*YEAR, 0.2*YEAR, 3*MONTH, 0.2*YEAR, 3*MONTH, 0.2*YEAR]) / YEAR,
-        np.array([launch_range[1]-launch_range[0], 8*YEAR, 4*YEAR, YEAR, 4*YEAR, YEAR, 4*YEAR]) / YEAR))
+        np.array([launch_range[1]-launch_range[0], 5*YEAR, 4*YEAR, YEAR, 4*YEAR, YEAR, 4*YEAR]) / YEAR))
 
     res = differential_evolution(
         lambda x: score_paths_mars(x, a_id_1, a_id_2, a_id_3, launch_range, m_1, m_2, m_3, m_mars),
@@ -357,7 +357,7 @@ def beam_search(asteroid_list, launch_utc_min, launch_utc_max,
         for launch_frac in np.linspace(0, 1, 5):
             et_launch = et_min + launch_frac * (et_max - et_min)
             dv, _, et_arr = _leg_dv('399', str(int(asteroid_list[i]['ID'])),
-                                     et_launch, (2*WEEK, 8*YEAR), m_1)
+                                     et_launch, (2*WEEK, 5*YEAR), m_1)
             if dv < best_dv:
                 best_dv = dv
                 best_ets = (et_launch, et_arr)
@@ -377,7 +377,7 @@ def beam_search(asteroid_list, launch_utc_min, launch_utc_max,
                 et_stay_end = et_arr1 + stay_frac * YEAR
                 dv2, _, et_arr2 = _leg_dv(str(int(asteroid_list[i]['ID'])),
                                            str(int(asteroid_list[j]['ID'])),
-                                           et_stay_end, (2*WEEK, 8*YEAR), m_2)
+                                           et_stay_end, (2*WEEK, 5*YEAR), m_2)
                 total = dv1 + dv2
                 stage2.append((i, j, total, et_launch, et_arr1, et_stay_end, et_arr2))
 
@@ -397,7 +397,7 @@ def beam_search(asteroid_list, launch_utc_min, launch_utc_max,
                     continue
                 dv3, _, et_arr3 = _leg_dv(str(int(asteroid_list[j]['ID'])),
                                            str(int(asteroid_list[k]['ID'])),
-                                           et_stay_end2, (2*WEEK, 8*YEAR), m_3)
+                                           et_stay_end2, (2*WEEK, 5*YEAR), m_3)
                 total = dv12 + dv3
                 names = [asteroid_list[x]['NAME'] for x in [i, j, k]]
                 stage3.append((i, j, k, total, names,
