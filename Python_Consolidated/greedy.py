@@ -1,31 +1,44 @@
-"""
-greedy.py — Greedy trajectory selection algorithm.
+"""Consolidated greedy trajectory selection code.
 
-Combines: compute_path_deltav_greedy, score_paths_greedy, optimize_greedy_times,
-          generate_greedy_optimized_data, greedy_flightpath_animation, and analysis scripts.
+This module consolidates all greedy algorithm files for asteroid trajectory
+selection into a single file.  It includes delta-v computation, scoring,
+time optimization, data generation, flight-path animation, path analysis,
+plotting utilities, and the main runner script.
+
+Source files consolidated:
+    compute_path_deltav_greedy.py
+    score_paths_greedy.py
+    optimize_greedy_times.py
+    generate_greedy_optimized_data.py
+    greedy_flightpath_animation.py
+    greedy_selector.py
+    find_all_paths_greedy.py
+    find_best_path_greedy.py
+    plot_best_path.py
+    plot_dv_range.py
 """
 
 import os
 import time
 import pickle
 import glob
+import itertools
 
 import numpy as np
-import pandas as pd
 import spiceypy
 import matplotlib.pyplot as plt
 from matplotlib.animation import FFMpegWriter
+from mpl_toolkits.mplot3d import Axes3D
 from scipy.optimize import minimize
 from tqdm import tqdm
+import pandas as pd
 
-from core import (solve_lambert, two_body_sim, load_kernels,
-                  get_state, get_mu, get_radius, compute_flyby_dv,
-                  DAY, YEAR, MONTH, WEEK, MINUTE, HOUR, MU_SUN)
+from core import lambert, two_body_sim, load_kernels, DAY, YEAR, MONTH, WEEK, MINUTE, HOUR
 
 
-# =============================================================================
+###############################################################################
 # DELTA-V COMPUTATION
-# =============================================================================
+###############################################################################
 
 def compute_path_deltav_greedy(launch_body, landing_body, goal_body,
                                launch_date, arrival_date, goal_date,
@@ -71,15 +84,18 @@ def compute_path_deltav_greedy(launch_body, landing_body, goal_body,
     if sgn_2 == 0:
         sgn_2 = 1
 
-    myu_sun = MU_SUN
+    _, myu_sun_vals = spiceypy.bodvcd(10, 'GM', 10)
+    myu_sun = myu_sun_vals[0]
 
     # --- Direct transfer (no flyby) ---
     if landing_body == "-1":
-        launch_state_r, launch_state_v = get_state(launch_body, launch_date)
-        goal_state_r, goal_state_v = get_state(goal_body, goal_date)
+        launch_state, _ = spiceypy.spkezr(launch_body, launch_date,
+                                          'ECLIPJ2000', 'NONE', '10')
+        goal_state, _ = spiceypy.spkezr(goal_body, goal_date,
+                                        'ECLIPJ2000', 'NONE', '10')
 
-        lambert_launch, lambert_goal, exit_flag = solve_lambert(
-            launch_state_r, goal_state_r,
+        lambert_launch, lambert_goal, _, exit_flag = lambert(
+            launch_state[0:3], goal_state[0:3],
             sgn_1 * (goal_date - launch_date) / DAY,
             round(abs(m_1)), myu_sun)
 
@@ -89,8 +105,8 @@ def compute_path_deltav_greedy(launch_body, landing_body, goal_body,
         if exit_flag != 1:
             return (1e3, 1e3, 1e3, 1e3, None, None, None, None)
 
-        dv_launch = np.linalg.norm(lambert_launch - launch_state_v)
-        dv_goal = np.linalg.norm(lambert_goal - goal_state_v)
+        dv_launch = np.linalg.norm(lambert_launch - launch_state[3:6])
+        dv_goal = np.linalg.norm(lambert_goal - goal_state[3:6])
         dv_arrive = 0.0
         dv_total = dv_launch + dv_goal
 
@@ -98,49 +114,72 @@ def compute_path_deltav_greedy(launch_body, landing_body, goal_body,
                 lambert_launch, lambert_arrive_in, lambert_arrive_out, lambert_goal)
 
     # --- Two-leg transfer with flyby ---
-    launch_state_r, launch_state_v = get_state(launch_body, launch_date)
-    arrive_state_r, arrive_state_v = get_state(landing_body, arrival_date)
-    goal_state_r, goal_state_v = get_state(goal_body, goal_date)
+    launch_state, _ = spiceypy.spkezr(launch_body, launch_date,
+                                      'ECLIPJ2000', 'NONE', '10')
+    arrive_state, _ = spiceypy.spkezr(landing_body, arrival_date,
+                                      'ECLIPJ2000', 'NONE', '10')
+    goal_state, _ = spiceypy.spkezr(goal_body, goal_date,
+                                    'ECLIPJ2000', 'NONE', '10')
 
     HEIGHT_THRESHOLD = 100  # km
 
-    lambert_launch, lambert_arrive_in, exit_flag_1 = solve_lambert(
-        launch_state_r, arrive_state_r,
+    lambert_launch, lambert_arrive_in, _, exit_flag_1 = lambert(
+        launch_state[0:3], arrive_state[0:3],
         sgn_1 * (arrival_date - launch_date) / DAY,
         round(abs(m_1)), myu_sun)
 
-    lambert_arrive_out, lambert_goal, exit_flag_2 = solve_lambert(
-        arrive_state_r, goal_state_r,
+    lambert_arrive_out, lambert_goal, _, exit_flag_2 = lambert(
+        arrive_state[0:3], goal_state[0:3],
         sgn_2 * (goal_date - arrival_date) / DAY,
         round(abs(m_2)), myu_sun)
 
     if exit_flag_1 != 1 or exit_flag_2 != 1:
         return (1e3, 1e3, 1e3, 1e3, None, None, None, None)
 
-    dv_launch = np.linalg.norm(lambert_launch - launch_state_v)
+    dv_launch = np.linalg.norm(lambert_launch - launch_state[3:6])
+
+    v_inf_in = lambert_arrive_in - arrive_state[3:6]
+    v_inf_out = lambert_arrive_out - arrive_state[3:6]
 
     flyby_id = int(float(landing_body))
-    mu_flyby = get_mu(flyby_id)
+    _, myu_flyby_vals = spiceypy.bodvcd(flyby_id, 'GM', 10)
+    myu_flyby = myu_flyby_vals[0]
 
-    # For Mars (body 4), use body 499 for radius
+    # For Mars (body 4), use body 499 for radii
     if flyby_id == 4:
-        safe_radius = get_radius(499) + HEIGHT_THRESHOLD
+        _, r_p_vals = spiceypy.bodvcd(499, 'RADII', 10)
     else:
-        safe_radius = get_radius(flyby_id) + HEIGHT_THRESHOLD
+        _, r_p_vals = spiceypy.bodvcd(flyby_id, 'RADII', 10)
+    r_p = r_p_vals[0]
 
-    dv_arrive = compute_flyby_dv(lambert_arrive_in, lambert_arrive_out,
-                                 arrive_state_v, mu_flyby, safe_radius)
+    delta_des = np.arccos(
+        np.clip(np.dot(v_inf_in, v_inf_out)
+                / (np.linalg.norm(v_inf_in) * np.linalg.norm(v_inf_out)),
+                -1.0, 1.0))
+    delta_max = 2 * np.arcsin(
+        1 / (1 + (r_p + HEIGHT_THRESHOLD)
+             * (np.linalg.norm(v_inf_in) ** 2) / myu_flyby))
 
-    dv_goal = np.linalg.norm(lambert_goal - goal_state_v)
+    dv_arrive = 0.0
+    if delta_des > delta_max:
+        v_p_in = np.sqrt(np.linalg.norm(v_inf_in) ** 2
+                         + 2 * myu_flyby / (HEIGHT_THRESHOLD + r_p))
+        v_p_out = np.sqrt(np.linalg.norm(v_inf_out) ** 2
+                          + 2 * myu_flyby / (HEIGHT_THRESHOLD + r_p))
+        d_delta = delta_des - delta_max
+        dv_arrive = np.sqrt(v_p_in ** 2 + v_p_out ** 2
+                            - 2 * v_p_in * v_p_out * np.cos(d_delta))
+
+    dv_goal = np.linalg.norm(lambert_goal - goal_state[3:6])
     dv_total = dv_launch + dv_arrive + dv_goal
 
     return (dv_launch, dv_arrive, dv_goal, dv_total,
             lambert_launch, lambert_arrive_in, lambert_arrive_out, lambert_goal)
 
 
-# =============================================================================
+###############################################################################
 # SCORING
-# =============================================================================
+###############################################################################
 
 def score_paths_greedy(time_vector, launch_range, launch_body,
                        landing_body, goal_body, m_1, m_2):
@@ -179,9 +218,9 @@ def score_paths_greedy(time_vector, launch_range, launch_body,
     return dv_total
 
 
-# =============================================================================
+###############################################################################
 # OPTIMIZATION
-# =============================================================================
+###############################################################################
 
 def optimize_greedy_times(a_id_1, a_id_2, a_id_3, launch_range, M):
     """Optimize departure/flyby/arrival times for a 3-leg greedy trajectory.
@@ -329,9 +368,9 @@ def optimize_greedy_times(a_id_1, a_id_2, a_id_3, launch_range, M):
     return optimized_output
 
 
-# =============================================================================
+###############################################################################
 # DATA GENERATION
-# =============================================================================
+###############################################################################
 
 def generate_greedy_optimized_data(asteroid_list, M, launch_utc_min,
                                    launch_utc_max, save_filename):
@@ -419,9 +458,9 @@ def generate_greedy_optimized_data(asteroid_list, M, launch_utc_min,
     return asteroid_optimized_data
 
 
-# =============================================================================
+###############################################################################
 # ANIMATION
-# =============================================================================
+###############################################################################
 
 def greedy_flightpath_animation(path_defined_vector, asteroid_list,
                                 a_index_1, a_index_2, a_index_3,
@@ -471,18 +510,22 @@ def greedy_flightpath_animation(path_defined_vector, asteroid_list,
     t_diff_3_2 = (path_defined_vector[2]['et_goal']
                   - path_defined_vector[2]['et_flyby'])
 
-    myu_sun = MU_SUN
+    _, myu_sun_vals = spiceypy.bodvcd(10, 'GM', 10)
+    myu_sun = myu_sun_vals[0]
 
     # Get departure states
-    earth_launch_r, earth_launch_v = get_state(
-        '399', path_defined_vector[0]['et_launch'])
-    a1_r, a1_v = get_state(
-        a_id_1, path_defined_vector[1]['et_launch'])
-    a2_r, a2_v = get_state(
-        a_id_2, path_defined_vector[2]['et_launch'])
+    earth_launch_state, _ = spiceypy.spkezr(
+        '399', path_defined_vector[0]['et_launch'],
+        'ECLIPJ2000', 'NONE', '10')
+    a1_state, _ = spiceypy.spkezr(
+        a_id_1, path_defined_vector[1]['et_launch'],
+        'ECLIPJ2000', 'NONE', '10')
+    a2_state, _ = spiceypy.spkezr(
+        a_id_2, path_defined_vector[2]['et_launch'],
+        'ECLIPJ2000', 'NONE', '10')
 
     # --- Leg 1 sub-leg 1 ---
-    x_0 = np.concatenate([earth_launch_r,
+    x_0 = np.concatenate([earth_launch_state[0:3],
                           path_defined_vector[0]['LAMBERT_LAUNCH']])
     X_1_1, T_1_1 = two_body_sim(t_diff_1_1, x_0, myu_sun)
 
@@ -495,7 +538,7 @@ def greedy_flightpath_animation(path_defined_vector, asteroid_list,
     X_1_2, T_1_2 = two_body_sim(t_diff_1_2, x_0, myu_sun)
 
     # --- Leg 2 sub-leg 1 ---
-    x_0 = np.concatenate([a1_r,
+    x_0 = np.concatenate([a1_state[0:3],
                           path_defined_vector[1]['LAMBERT_LAUNCH']])
     X_2_1, T_2_1 = two_body_sim(t_diff_2_1, x_0, myu_sun)
 
@@ -508,7 +551,7 @@ def greedy_flightpath_animation(path_defined_vector, asteroid_list,
     X_2_2, T_2_2 = two_body_sim(t_diff_2_2, x_0, myu_sun)
 
     # --- Leg 3 sub-leg 1 ---
-    x_0 = np.concatenate([a2_r,
+    x_0 = np.concatenate([a2_state[0:3],
                           path_defined_vector[2]['LAMBERT_LAUNCH']])
     X_3_1, T_3_1 = two_body_sim(t_diff_3_1, x_0, myu_sun)
 
@@ -527,11 +570,16 @@ def greedy_flightpath_animation(path_defined_vector, asteroid_list,
     FPS = max(1, N / t_duration)
 
     # Pre-compute full-mission orbit positions for backdrop
-    earth_orbit = np.array([get_state('399', t)[0] for t in mission_time])
-    mars_orbit = np.array([get_state('4', t)[0] for t in mission_time])
-    a1_orbit = np.array([get_state(a_id_1, t)[0] for t in mission_time])
-    a2_orbit = np.array([get_state(a_id_2, t)[0] for t in mission_time])
-    a3_orbit = np.array([get_state(a_id_3, t)[0] for t in mission_time])
+    earth_orbit = np.array([spiceypy.spkezr('399', t, 'ECLIPJ2000', 'NONE', '10')[0]
+                            for t in mission_time])
+    mars_orbit = np.array([spiceypy.spkezr('4', t, 'ECLIPJ2000', 'NONE', '10')[0]
+                           for t in mission_time])
+    a1_orbit = np.array([spiceypy.spkezr(a_id_1, t, 'ECLIPJ2000', 'NONE', '10')[0]
+                         for t in mission_time])
+    a2_orbit = np.array([spiceypy.spkezr(a_id_2, t, 'ECLIPJ2000', 'NONE', '10')[0]
+                         for t in mission_time])
+    a3_orbit = np.array([spiceypy.spkezr(a_id_3, t, 'ECLIPJ2000', 'NONE', '10')[0]
+                         for t in mission_time])
 
     fig = plt.figure(figsize=(16, 10))
     writer = FFMpegWriter(fps=FPS)
@@ -625,11 +673,11 @@ def _animate_section(fig, writer, mission_time, X_i, T_i, et_launch,
         # Current positions
         t_now = T_i[i] + et_launch
         for body_id, color in [('399', 'cyan'), ('4', 'magenta')]:
-            r, _ = get_state(body_id, t_now)
-            ax.scatter([r[0]], [r[1]], [r[2]], c=color, s=20)
+            st, _ = spiceypy.spkezr(body_id, t_now, 'ECLIPJ2000', 'NONE', '10')
+            ax.scatter([st[0]], [st[1]], [st[2]], c=color, s=20)
         for body_id, color in [(a_id_1, 'red'), (a_id_2, 'green'), (a_id_3, 'blue')]:
-            r, _ = get_state(body_id, t_now)
-            ax.scatter([r[0]], [r[1]], [r[2]], c=color, s=20)
+            st, _ = spiceypy.spkezr(body_id, t_now, 'ECLIPJ2000', 'NONE', '10')
+            ax.scatter([st[0]], [st[1]], [st[2]], c=color, s=20)
 
         # Spacecraft position
         ax.scatter([X_i[i, 0]], [X_i[i, 1]], [X_i[i, 2]], c='white', s=30)
@@ -655,7 +703,9 @@ def _animate_stay(fig, writer, mission_time, asteroid_stay_number, n_time,
 
     # Which asteroid are we staying at?
     stay_id = a_id_1 if asteroid_stay_number == 1 else a_id_2
-    stay_positions = np.array([get_state(stay_id, t)[0] for t in t_range])
+    stay_positions = np.array([
+        spiceypy.spkezr(stay_id, t, 'ECLIPJ2000', 'NONE', '10')[0]
+        for t in t_range])
 
     for i in range(n_time):
         fig.clf()
@@ -674,11 +724,11 @@ def _animate_stay(fig, writer, mission_time, asteroid_stay_number, n_time,
 
         # Current positions
         t_now = t_range[i]
-        r, _ = get_state('399', t_now)
-        ax.scatter([r[0]], [r[1]], [r[2]], c='cyan', s=20)
+        st, _ = spiceypy.spkezr('399', t_now, 'ECLIPJ2000', 'NONE', '10')
+        ax.scatter([st[0]], [st[1]], [st[2]], c='cyan', s=20)
         for body_id, color in [(a_id_1, 'red'), (a_id_2, 'green'), (a_id_3, 'blue')]:
-            r, _ = get_state(body_id, t_now)
-            ax.scatter([r[0]], [r[1]], [r[2]], c=color, s=20)
+            st, _ = spiceypy.spkezr(body_id, t_now, 'ECLIPJ2000', 'NONE', '10')
+            ax.scatter([st[0]], [st[1]], [st[2]], c=color, s=20)
 
         # Trajectory (stay path)
         ax.plot(stay_positions[:, 0], stay_positions[:, 1], stay_positions[:, 2],
@@ -692,9 +742,9 @@ def _animate_stay(fig, writer, mission_time, asteroid_stay_number, n_time,
         writer.grab_frame()
 
 
-# =============================================================================
-# FIND BEST PATH
-# =============================================================================
+###############################################################################
+# ANALYSIS
+###############################################################################
 
 def find_best_path_greedy(asteroid_optimized_data, asteroid_list):
     """Find the top 6 paths with lowest total delta-v.
@@ -790,12 +840,8 @@ def find_best_path_greedy(asteroid_optimized_data, asteroid_list):
     return i_mins, j_mins, k_mins
 
 
-# =============================================================================
-# FIND ALL PATHS
-# =============================================================================
-
-def main():
-    """Main entry point."""
+def find_all_paths_greedy_main():
+    """Load all greedy optimized data files and find the best path in each."""
     asteroid_list = load_kernels("NOTABLE_ASTEROID_BSPs", "generic_kernels")
     NUM_ASTEROIDS = len(asteroid_list)
 
@@ -901,15 +947,8 @@ def main():
     print(f'Wrote asteroid_optimized_data_table.csv ({len(DATA)} rows)')
 
 
-if __name__ == '__main__':
-    main()
-
-
-# =============================================================================
-# PLOT BEST PATH
-# =============================================================================
-
 def plot_best_path(asteroid_list, asteroid_optimized_data):
+    """Find top 6 greedy paths (excluding launch dv) and animate the best one."""
     NUM_ASTEROIDS = len(asteroid_list)
 
     i_mins = [-1] * 6
@@ -959,21 +998,16 @@ def plot_best_path(asteroid_list, asteroid_optimized_data):
         12, "GREEDY_BEST_PATH.mp4")
 
 
-if __name__ == '__main__':
-    import pickle
-    from ..load_kernels import load_kernels
-
+def plot_best_path_main():
+    """Main entry point for plot_best_path."""
     asteroid_list = load_kernels("NOTABLE_ASTEROID_BSPs", "path/to/kernels")
     with open("greedy_asteroid_paths/greedy_data.pkl", "rb") as f:
         asteroid_optimized_data = pickle.load(f)
     plot_best_path(asteroid_list, asteroid_optimized_data)
 
 
-# =============================================================================
-# PLOT DV RANGE
-# =============================================================================
-
 def plot_dv_range(asteroid_list):
+    """Surface plot of delta-v as a function of two time parameters."""
     LAUNCH_RANGE = [
         spiceypy.str2et('Jan 1 12:00:00 UTC 2028'),
         spiceypy.str2et('Dec 31 12:00:00 UTC 2028'),
@@ -1006,17 +1040,17 @@ def plot_dv_range(asteroid_list):
     plt.show()
 
 
-if __name__ == '__main__':
-    from ..load_kernels import load_kernels
+def plot_dv_range_main():
+    """Main entry point for plot_dv_range."""
     asteroid_list = load_kernels("NOTABLE_ASTEROID_BSPs", "path/to/kernels")
     plot_dv_range(asteroid_list)
 
 
-# =============================================================================
-# GREEDY SELECTOR
-# =============================================================================
+###############################################################################
+# RUNNER SCRIPTS
+###############################################################################
 
-def main():
+def greedy_selector_main():
     """Main entry point for the greedy selector script."""
     try:
         asteroid_list = load_kernels("NOTABLE_ASTEROID_BSPs", "generic_kernels")
@@ -1061,5 +1095,4 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
-
+    greedy_selector_main()
