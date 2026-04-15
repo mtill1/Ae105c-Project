@@ -7,7 +7,8 @@ import spiceypy
 import matplotlib.pyplot as plt
 
 from core import load_kernels, get_state, MU_SUN
-from optimization import generate_optimized_data, generate_mars_transfer_optimized
+from optimization import (generate_optimized_data, generate_mars_transfer_optimized,
+                         two_level_optimize, beam_search)
 from visualization import flightpath_animation, graph_asteroids
 
 
@@ -240,20 +241,81 @@ def run_graphing_notable_asteroids():
 
 
 # ============================================================================
+# TWO-LEVEL OPTIMIZATION (recommended for large asteroid pools)
+# ============================================================================
+
+def run_two_level_optimize(science_csv=None, alpha=1.0):
+    """Run two-level optimization: coarse filter all N^3, then fine-tune top 50.
+
+    Parameters
+    ----------
+    science_csv : str or None — path to asteroid_tradeoff.csv for science scoring
+    alpha : float — 1.0 = pure delta-v, 0.7 = 70% dv + 30% science
+    """
+    import pandas as pd
+
+    bsp_folder = "NOTABLE_ASTEROID_BSPs"
+    generic_kernels = "/Users/rebnoob/Documents/ae105/generic_kernels"
+
+    asteroid_list = load_kernels(bsp_folder, generic_kernels)
+
+    science_scores = None
+    if science_csv:
+        df = pd.read_csv(science_csv)
+        science_scores = {}
+        for _, row in df.iterrows():
+            name = str(row['Name_DecRadius']).split('(')[0].strip().upper()
+            science_scores[name] = row['Total_WeightedScore']
+
+    return two_level_optimize(
+        asteroid_list, 0, 0, 0,
+        'Jan 1 12:00:00 UTC 2027', 'Dec 31 12:00:00 UTC 2035',
+        top_n=50, science_scores=science_scores, alpha=alpha)
+
+
+# ============================================================================
+# BEAM SEARCH (structured multi-stage path selection)
+# ============================================================================
+
+def run_beam_search(beam_width=10, science_csv=None, alpha=1.0):
+    """Run beam search with configurable beam width and optional science weighting."""
+    import pandas as pd
+
+    bsp_folder = "NOTABLE_ASTEROID_BSPs"
+    generic_kernels = "/Users/rebnoob/Documents/ae105/generic_kernels"
+
+    asteroid_list = load_kernels(bsp_folder, generic_kernels)
+
+    science_scores = None
+    if science_csv:
+        df = pd.read_csv(science_csv)
+        science_scores = {}
+        for _, row in df.iterrows():
+            name = str(row['Name_DecRadius']).split('(')[0].strip().upper()
+            science_scores[name] = row['Total_WeightedScore']
+
+    return beam_search(
+        asteroid_list,
+        'Jan 1 12:00:00 UTC 2027', 'Dec 31 12:00:00 UTC 2035',
+        beam_width=beam_width, science_scores=science_scores, alpha=alpha)
+
+
+# ============================================================================
 # MAIN
 # ============================================================================
 
 if __name__ == '__main__':
     commands = {
-        'asteroid_selector': run_asteroid_selector,
-        'mars_transfer_selector': run_mars_transfer_selector,
-        'find_best_path': find_best_path,
-        'graph_all_best_paths': run_graph_all_best_paths,
-        'graph_example_flightpath': run_graph_example_flightpath,
-        'graphing_notable_asteroids': run_graphing_notable_asteroids,
+        'asteroid_selector': 'Brute-force N^3 optimization (original)',
+        'mars_transfer_selector': 'Mars flyby optimization',
+        'two_level_optimize': 'Two-level: coarse filter + fine optimize (recommended)',
+        'beam_search': 'Beam search: structured multi-stage selection',
+        'find_best_path': 'Find top paths from saved results',
+        'graph_all_best_paths': 'Animate all best paths',
+        'graphing_notable_asteroids': 'Animate notable asteroid orbits',
     }
 
-    print("Available commands:")
-    for name in commands:
-        print(f"  - {name}")
-    print("\nUsage: import scripts and call the desired function directly.")
+    print("Available workflows:")
+    for name, desc in commands.items():
+        print(f"  {name:30s} — {desc}")
+    print("\nUsage: from scripts import run_two_level_optimize; run_two_level_optimize()")

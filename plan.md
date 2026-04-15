@@ -169,9 +169,11 @@ The codebase implements a two-tier Lambert solver (`lambert.m`, ~800 lines):
 
 ### 3.2 Trajectory Optimization Architecture
 
-The optimization pipeline solves a 6-dimensional continuous problem for each asteroid triplet:
+The optimization pipeline has been upgraded from the original grid-search + local optimizer to a multi-layer system using global optimization, mid-leg Deep Space Maneuvers (DSMs), and beam search for sequence selection.
 
-**Decision variables** (parameterized in `OPTIMIZE_TIMES.m`):
+#### 3.2.1 Decision Variables
+
+**Pure Lambert mode (6D)** — baseline formulation:
 
 | Variable | Physical Meaning | Bounds |
 |---|---|---|
@@ -182,26 +184,103 @@ The optimization pipeline solves a 6-dimensional continuous problem for each ast
 | x5 | Stay time at Asteroid 2 | [3 months, 1 year] |
 | x6 | Transfer time: Asteroid 2 -> Asteroid 3 | [2 weeks, 8 years] |
 
-**Objective function** (`SCORE_PATHS.m` -> `COMPUTE_PATH_DELTAV.m`):
+**MGA-DSM mode (9D)** — adds Deep Space Maneuver timing per leg:
 
-The objective minimizes the total impulsive delta-V, which is the sum of 5 maneuvers:
+| Variable | Physical Meaning | Bounds |
+|---|---|---|
+| x1-x6 | Same as above | Same |
+| x7 (eta_1) | DSM timing fraction, leg 1 | [0.01, 0.99] |
+| x8 (eta_2) | DSM timing fraction, leg 2 | [0.01, 0.99] |
+| x9 (eta_3) | DSM timing fraction, leg 3 | [0.01, 0.99] |
 
+Each eta_i splits a transfer leg into two sub-arcs joined by an impulsive Deep Space Maneuver. The spacecraft departs on a Lambert arc, coasts for fraction eta of the transfer time, applies a correction burn (DSM), then follows a new Lambert arc to the destination. This is the standard MGA-DSM formulation used in ESA mission design (Vasile & De Pascale, 2006). When eta ~ 0 or ~1, the DSM vanishes and the solution reduces to a pure Lambert arc, so MGA-DSM can only improve upon the baseline.
+
+#### 3.2.2 Objective Function
+
+The objective minimizes the total impulsive delta-V, the sum of all maneuvers:
+
+**Pure Lambert:** 5 maneuvers (arrive/depart at each asteroid, arrive at final)
 ```
 delta_V_total = |dV_A1_arrive| + |dV_A1_depart| + |dV_A2_arrive| + |dV_A2_depart| + |dV_A3_arrive|
 ```
 
-Each maneuver delta-V is computed as the difference between the Lambert solution velocity and the body's actual heliocentric velocity:
-
+**MGA-DSM:** 5 maneuvers + 3 DSM burns (one per leg)
 ```
-dV_arrive = V_lambert_arrival - V_asteroid    (velocity matching at arrival)
-dV_depart = V_lambert_departure - V_asteroid  (departure onto next arc)
+delta_V_total = |dV_A1_arr| + |dV_DSM_1| + |dV_A1_dep| + |dV_DSM_2| + |dV_A2_arr| + |dV_A2_dep| + |dV_DSM_3| + |dV_A3_arr|
 ```
 
-Note: Earth departure delta-V (dV_launch = V_lambert_departure - V_Earth) is tracked separately but excluded from the minimized total. This is physically justified because the launch vehicle provides C3, not the spacecraft.
+Earth departure delta-V is tracked separately (launch vehicle provides C3). A mission duration constraint (15 years max) is enforced as a penalty (dV = 1000 km/s for violations). Lambert solver failures are penalized identically.
 
-**Optimization method**: MATLAB's `fmincon` (interior-point or SQP) with a grid of initial guesses. The grid uses Chebyshev spacing defined by N_RES = [5,3,2,3,2,3], producing 5x3x2x3x2x3 = 540 starting points. The best result across all starting points is kept. This multi-start approach addresses the highly multimodal nature of the problem -- Lambert arcs produce many local minima due to orbital phasing.
+#### 3.2.3 Optimization Methods
 
-**Lambert failure handling**: When the Lambert solver fails to converge (EXIT_FLAG != 1), `COMPUTE_PATH_DELTAV.m` returns delta_v_total = 1000 km/s as a penalty, effectively eliminating infeasible solutions.
+Three complementary methods are implemented in `Python_Consolidated/optimization.py`:
+
+**Method 1: Differential Evolution + L-BFGS-B polish** (`optimize_times`)
+
+scipy's `differential_evolution` is a population-based global optimizer that explores the search space stochastically and finishes with an L-BFGS-B gradient descent polish. Replaces the old 540-point Chebyshev grid. Configuration: `maxiter=300`, `tol=1e-7`, `seed=42`, `polish=True`.
+
+**Method 2: pagmo Monotonic Basin Hopping (MBH)** (`udp.py` + pagmo)
+
+pagmo (Parallel Global Multiobjective Optimizer) from ESA provides Monotonic Basin Hopping wrapping NLopt SLSQP as the local solver. MBH was specifically designed for trajectory optimization at ESA's Advanced Concepts Team (Wales & Doye, 1997). It repeatedly perturbs the current best solution and runs local optimization, accepting only monotonically improving results.
+
+The `udp.py` module defines pagmo-compatible User Defined Problem (UDP) classes:
+- `AsteroidTripletUDP` — 6D pure Lambert
+- `AsteroidTripletDSM_UDP` — 9D MGA-DSM
+- `MarsTripletUDP` — 7D Mars flyby variant
+
+Island-model parallelism runs multiple MBH instances across CPU cores (`pg.archipelago`), extracting the best result across all islands.
+
+**Method 3: Two-Level Optimization** (`two_level_optimize`)
+
+For large asteroid catalogs, evaluates all N^3 triplets with a fast coarse optimizer (`differential_evolution` with `maxiter=30`, `popsize=5`), then fine-optimizes only the top candidates with the full optimizer. Reduces computation by ~10x for the same top-k results.
+
+#### 3.2.4 Sequence Selection: Beam Search
+
+The beam search (`beam_search.py` and `optimization.beam_search`) replaces both the O(N^3) exhaustive enumeration and the greedy heuristic (beam width=1) with configurable beam width k:
+
+1. **Stage 1:** Earth -> each of N asteroids. Quick Lambert screen, keep top k.
+2. **Stage 2:** For each of k survivors, extend to each remaining asteroid. Keep top k.
+3. **Stage 3:** Repeat, producing k complete triplets.
+4. **Refinement:** Run full optimization only on the top-k triplets.
+
+**Complexity:** O(N * k * L) quick screens + k full optimizations, vs. N^3 full optimizations for exhaustive. For N=100, k=20: ~6,000 screens + 20 full runs vs. 1,000,000 full runs.
+
+The beam search in `beam_search.py` also supports **composition filtering** — constraining sequences to include at least one asteroid from each compositional class (C, S, M) to guarantee scientific diversity.
+
+#### 3.2.5 Optimization Architecture Summary
+
+```
+                    ┌─────────────────────────────────┐
+                    │  SEQUENCE SELECTION LAYER        │
+                    │  beam_search / two_level_optimize│
+                    │  Identifies top-k triplets       │
+                    └───────────────┬─────────────────┘
+                                    │ top-k triplets
+                    ┌───────────────▼─────────────────┐
+                    │  GLOBAL OPTIMIZATION LAYER       │
+                    │  differential_evolution or        │
+                    │  pagmo MBH (island-model)        │
+                    │  Optimizes times for each triplet│
+                    └───────────────┬─────────────────┘
+                                    │ optimal times
+                    ┌───────────────▼─────────────────┐
+                    │  TRAJECTORY EVALUATION LAYER     │
+                    │  Lambert solver (pykep Izzo)     │
+                    │  + optional mid-leg DSMs         │
+                    │  Computes delta-V breakdown      │
+                    └─────────────────────────────────┘
+```
+
+#### 3.2.6 Optimization References
+
+| Reference | Contribution |
+|---|---|
+| Wales, D.J. & Doye, J.P.K. (1997). "Global Optimization by Basin-Hopping." *J. Phys. Chem. A*, 101(28):5111-5116. | Monotonic Basin Hopping algorithm |
+| Storn, R. & Price, K. (1997). "Differential Evolution." *J. Global Optimization*, 11:341-359. | Differential Evolution algorithm |
+| Vasile, M. & De Pascale, P. (2006). "On the Preliminary Design of Multiple Gravity-Assist Trajectories." *JGCD*, 29(6):1347-1361. | MGA-DSM formulation with eta parameter |
+| Sims, J.A. & Flanagan, S.N. (1999). "Preliminary design of low-thrust interplanetary missions." AAS/AIAA Astrodynamics Specialist Conf. | Sims-Flanagan transcription for low-thrust |
+| Izzo, D. et al. pagmo: https://esa.github.io/pagmo2/ | Parallel global optimizer framework |
+| pykep: https://esa.github.io/pykep/ | ESA trajectory design toolkit |
 
 ### 3.3 Reference Frame and Ephemeris
 

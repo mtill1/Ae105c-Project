@@ -33,7 +33,9 @@ from scipy.optimize import minimize
 from tqdm import tqdm
 import pandas as pd
 
-from core import lambert, two_body_sim, load_kernels, DAY, YEAR, MONTH, WEEK, MINUTE, HOUR
+from core import (solve_lambert, solve_lambert_best, two_body_sim, load_kernels,
+                  get_state, get_mu, get_radius, compute_flyby_dv,
+                  DAY, YEAR, MONTH, WEEK, MINUTE, HOUR, MU_SUN, MAX_MISSION_DURATION)
 
 
 ###############################################################################
@@ -84,18 +86,15 @@ def compute_path_deltav_greedy(launch_body, landing_body, goal_body,
     if sgn_2 == 0:
         sgn_2 = 1
 
-    _, myu_sun_vals = spiceypy.bodvcd(10, 'GM', 10)
-    myu_sun = myu_sun_vals[0]
+    myu_sun = MU_SUN
 
     # --- Direct transfer (no flyby) ---
     if landing_body == "-1":
-        launch_state, _ = spiceypy.spkezr(launch_body, launch_date,
-                                          'ECLIPJ2000', 'NONE', '10')
-        goal_state, _ = spiceypy.spkezr(goal_body, goal_date,
-                                        'ECLIPJ2000', 'NONE', '10')
+        launch_r, launch_v = get_state(launch_body, launch_date)
+        goal_r, goal_v = get_state(goal_body, goal_date)
 
-        lambert_launch, lambert_goal, _, exit_flag = lambert(
-            launch_state[0:3], goal_state[0:3],
+        lambert_launch, lambert_goal, exit_flag = solve_lambert(
+            launch_r, goal_r,
             sgn_1 * (goal_date - launch_date) / DAY,
             round(abs(m_1)), myu_sun)
 
@@ -105,8 +104,8 @@ def compute_path_deltav_greedy(launch_body, landing_body, goal_body,
         if exit_flag != 1:
             return (1e3, 1e3, 1e3, 1e3, None, None, None, None)
 
-        dv_launch = np.linalg.norm(lambert_launch - launch_state[3:6])
-        dv_goal = np.linalg.norm(lambert_goal - goal_state[3:6])
+        dv_launch = np.linalg.norm(lambert_launch - launch_v)
+        dv_goal = np.linalg.norm(lambert_goal - goal_v)
         dv_arrive = 0.0
         dv_total = dv_launch + dv_goal
 
@@ -114,63 +113,37 @@ def compute_path_deltav_greedy(launch_body, landing_body, goal_body,
                 lambert_launch, lambert_arrive_in, lambert_arrive_out, lambert_goal)
 
     # --- Two-leg transfer with flyby ---
-    launch_state, _ = spiceypy.spkezr(launch_body, launch_date,
-                                      'ECLIPJ2000', 'NONE', '10')
-    arrive_state, _ = spiceypy.spkezr(landing_body, arrival_date,
-                                      'ECLIPJ2000', 'NONE', '10')
-    goal_state, _ = spiceypy.spkezr(goal_body, goal_date,
-                                    'ECLIPJ2000', 'NONE', '10')
+    launch_r, launch_v = get_state(launch_body, launch_date)
+    arrive_r, arrive_v = get_state(landing_body, arrival_date)
+    goal_r, goal_v = get_state(goal_body, goal_date)
 
     HEIGHT_THRESHOLD = 100  # km
 
-    lambert_launch, lambert_arrive_in, _, exit_flag_1 = lambert(
-        launch_state[0:3], arrive_state[0:3],
+    lambert_launch, lambert_arrive_in, exit_flag_1 = solve_lambert(
+        launch_r, arrive_r,
         sgn_1 * (arrival_date - launch_date) / DAY,
         round(abs(m_1)), myu_sun)
 
-    lambert_arrive_out, lambert_goal, _, exit_flag_2 = lambert(
-        arrive_state[0:3], goal_state[0:3],
+    lambert_arrive_out, lambert_goal, exit_flag_2 = solve_lambert(
+        arrive_r, goal_r,
         sgn_2 * (goal_date - arrival_date) / DAY,
         round(abs(m_2)), myu_sun)
 
     if exit_flag_1 != 1 or exit_flag_2 != 1:
         return (1e3, 1e3, 1e3, 1e3, None, None, None, None)
 
-    dv_launch = np.linalg.norm(lambert_launch - launch_state[3:6])
-
-    v_inf_in = lambert_arrive_in - arrive_state[3:6]
-    v_inf_out = lambert_arrive_out - arrive_state[3:6]
+    dv_launch = np.linalg.norm(lambert_launch - launch_v)
 
     flyby_id = int(float(landing_body))
-    _, myu_flyby_vals = spiceypy.bodvcd(flyby_id, 'GM', 10)
-    myu_flyby = myu_flyby_vals[0]
-
-    # For Mars (body 4), use body 499 for radii
+    mu_flyby = get_mu(flyby_id)
     if flyby_id == 4:
-        _, r_p_vals = spiceypy.bodvcd(499, 'RADII', 10)
+        safe_radius = get_radius(499) + HEIGHT_THRESHOLD
     else:
-        _, r_p_vals = spiceypy.bodvcd(flyby_id, 'RADII', 10)
-    r_p = r_p_vals[0]
+        safe_radius = get_radius(flyby_id) + HEIGHT_THRESHOLD
+    dv_arrive = compute_flyby_dv(lambert_arrive_in, lambert_arrive_out,
+                                 arrive_v, mu_flyby, safe_radius)
 
-    delta_des = np.arccos(
-        np.clip(np.dot(v_inf_in, v_inf_out)
-                / (np.linalg.norm(v_inf_in) * np.linalg.norm(v_inf_out)),
-                -1.0, 1.0))
-    delta_max = 2 * np.arcsin(
-        1 / (1 + (r_p + HEIGHT_THRESHOLD)
-             * (np.linalg.norm(v_inf_in) ** 2) / myu_flyby))
-
-    dv_arrive = 0.0
-    if delta_des > delta_max:
-        v_p_in = np.sqrt(np.linalg.norm(v_inf_in) ** 2
-                         + 2 * myu_flyby / (HEIGHT_THRESHOLD + r_p))
-        v_p_out = np.sqrt(np.linalg.norm(v_inf_out) ** 2
-                          + 2 * myu_flyby / (HEIGHT_THRESHOLD + r_p))
-        d_delta = delta_des - delta_max
-        dv_arrive = np.sqrt(v_p_in ** 2 + v_p_out ** 2
-                            - 2 * v_p_in * v_p_out * np.cos(d_delta))
-
-    dv_goal = np.linalg.norm(lambert_goal - goal_state[3:6])
+    dv_goal = np.linalg.norm(lambert_goal - goal_v)
     dv_total = dv_launch + dv_arrive + dv_goal
 
     return (dv_launch, dv_arrive, dv_goal, dv_total,
@@ -510,19 +483,15 @@ def greedy_flightpath_animation(path_defined_vector, asteroid_list,
     t_diff_3_2 = (path_defined_vector[2]['et_goal']
                   - path_defined_vector[2]['et_flyby'])
 
-    _, myu_sun_vals = spiceypy.bodvcd(10, 'GM', 10)
-    myu_sun = myu_sun_vals[0]
+    myu_sun = MU_SUN
 
     # Get departure states
-    earth_launch_state, _ = spiceypy.spkezr(
-        '399', path_defined_vector[0]['et_launch'],
-        'ECLIPJ2000', 'NONE', '10')
-    a1_state, _ = spiceypy.spkezr(
-        a_id_1, path_defined_vector[1]['et_launch'],
-        'ECLIPJ2000', 'NONE', '10')
-    a2_state, _ = spiceypy.spkezr(
-        a_id_2, path_defined_vector[2]['et_launch'],
-        'ECLIPJ2000', 'NONE', '10')
+    earth_launch_r, earth_launch_v = get_state('399', path_defined_vector[0]['et_launch'])
+    earth_launch_state = np.concatenate([earth_launch_r, earth_launch_v])
+    a1_r, a1_v = get_state(a_id_1, path_defined_vector[1]['et_launch'])
+    a1_state = np.concatenate([a1_r, a1_v])
+    a2_r, a2_v = get_state(a_id_2, path_defined_vector[2]['et_launch'])
+    a2_state = np.concatenate([a2_r, a2_v])
 
     # --- Leg 1 sub-leg 1 ---
     x_0 = np.concatenate([earth_launch_state[0:3],
@@ -570,16 +539,11 @@ def greedy_flightpath_animation(path_defined_vector, asteroid_list,
     FPS = max(1, N / t_duration)
 
     # Pre-compute full-mission orbit positions for backdrop
-    earth_orbit = np.array([spiceypy.spkezr('399', t, 'ECLIPJ2000', 'NONE', '10')[0]
-                            for t in mission_time])
-    mars_orbit = np.array([spiceypy.spkezr('4', t, 'ECLIPJ2000', 'NONE', '10')[0]
-                           for t in mission_time])
-    a1_orbit = np.array([spiceypy.spkezr(a_id_1, t, 'ECLIPJ2000', 'NONE', '10')[0]
-                         for t in mission_time])
-    a2_orbit = np.array([spiceypy.spkezr(a_id_2, t, 'ECLIPJ2000', 'NONE', '10')[0]
-                         for t in mission_time])
-    a3_orbit = np.array([spiceypy.spkezr(a_id_3, t, 'ECLIPJ2000', 'NONE', '10')[0]
-                         for t in mission_time])
+    earth_orbit = np.array([np.concatenate(get_state('399', t)) for t in mission_time])
+    mars_orbit = np.array([np.concatenate(get_state('4', t)) for t in mission_time])
+    a1_orbit = np.array([np.concatenate(get_state(a_id_1, t)) for t in mission_time])
+    a2_orbit = np.array([np.concatenate(get_state(a_id_2, t)) for t in mission_time])
+    a3_orbit = np.array([np.concatenate(get_state(a_id_3, t)) for t in mission_time])
 
     fig = plt.figure(figsize=(16, 10))
     writer = FFMpegWriter(fps=FPS)
@@ -673,11 +637,11 @@ def _animate_section(fig, writer, mission_time, X_i, T_i, et_launch,
         # Current positions
         t_now = T_i[i] + et_launch
         for body_id, color in [('399', 'cyan'), ('4', 'magenta')]:
-            st, _ = spiceypy.spkezr(body_id, t_now, 'ECLIPJ2000', 'NONE', '10')
-            ax.scatter([st[0]], [st[1]], [st[2]], c=color, s=20)
+            r, v = get_state(body_id, t_now)
+            ax.scatter([r[0]], [r[1]], [r[2]], c=color, s=20)
         for body_id, color in [(a_id_1, 'red'), (a_id_2, 'green'), (a_id_3, 'blue')]:
-            st, _ = spiceypy.spkezr(body_id, t_now, 'ECLIPJ2000', 'NONE', '10')
-            ax.scatter([st[0]], [st[1]], [st[2]], c=color, s=20)
+            r, v = get_state(body_id, t_now)
+            ax.scatter([r[0]], [r[1]], [r[2]], c=color, s=20)
 
         # Spacecraft position
         ax.scatter([X_i[i, 0]], [X_i[i, 1]], [X_i[i, 2]], c='white', s=30)
@@ -704,7 +668,7 @@ def _animate_stay(fig, writer, mission_time, asteroid_stay_number, n_time,
     # Which asteroid are we staying at?
     stay_id = a_id_1 if asteroid_stay_number == 1 else a_id_2
     stay_positions = np.array([
-        spiceypy.spkezr(stay_id, t, 'ECLIPJ2000', 'NONE', '10')[0]
+        np.concatenate(get_state(stay_id, t))
         for t in t_range])
 
     for i in range(n_time):
@@ -724,11 +688,11 @@ def _animate_stay(fig, writer, mission_time, asteroid_stay_number, n_time,
 
         # Current positions
         t_now = t_range[i]
-        st, _ = spiceypy.spkezr('399', t_now, 'ECLIPJ2000', 'NONE', '10')
-        ax.scatter([st[0]], [st[1]], [st[2]], c='cyan', s=20)
+        r, v = get_state('399', t_now)
+        ax.scatter([r[0]], [r[1]], [r[2]], c='cyan', s=20)
         for body_id, color in [(a_id_1, 'red'), (a_id_2, 'green'), (a_id_3, 'blue')]:
-            st, _ = spiceypy.spkezr(body_id, t_now, 'ECLIPJ2000', 'NONE', '10')
-            ax.scatter([st[0]], [st[1]], [st[2]], c=color, s=20)
+            r, v = get_state(body_id, t_now)
+            ax.scatter([r[0]], [r[1]], [r[2]], c=color, s=20)
 
         # Trajectory (stay path)
         ax.plot(stay_positions[:, 0], stay_positions[:, 1], stay_positions[:, 2],

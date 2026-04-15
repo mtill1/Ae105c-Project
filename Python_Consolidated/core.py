@@ -21,8 +21,10 @@ MINUTE = 60
 HOUR = 60 * MINUTE
 DAY = 24 * HOUR
 WEEK = 7 * DAY
-MONTH = 4 * WEEK
-YEAR = 12 * MONTH
+MONTH = 30.4375 * DAY       # average month (365.25/12)
+YEAR = 365.25 * DAY          # Julian year
+
+MAX_MISSION_DURATION = 15 * YEAR  # hard cap on total mission time
 
 # Unit conversion factors
 _KM2M = 1e3
@@ -86,6 +88,45 @@ def solve_lambert(r1_km, r2_km, tof_days, m, mu_km3s2):
 
     except Exception:
         return np.zeros(3), np.zeros(3), -1
+
+
+def solve_lambert_best(r1_km, r2_km, tof_days, mu_km3s2, max_revs=2):
+    """Solve Lambert trying multiple revolutions and both directions, return best.
+
+    Tries m=0,1,...,max_revs for both short-way and long-way, and picks the
+    solution with the lowest total delta-v (||V1-V_body1|| + ||V2-V_body2|| proxy:
+    we minimize ||V1||+||V2|| as a heuristic since body velocities aren't known here).
+
+    Returns (V1, V2, exitflag) for the best solution found.
+    """
+    r1_m = np.asarray(r1_km, dtype=float) * _KM2M
+    r2_m = np.asarray(r2_km, dtype=float) * _KM2M
+    tof_sec = abs(tof_days) * DAY
+    mu_m3s2 = mu_km3s2 * 1e9
+
+    best_v1, best_v2, best_cost = np.zeros(3), np.zeros(3), np.inf
+    found = False
+
+    for cw in [False, True]:
+        try:
+            lp = pk.lambert_problem(
+                r0=list(r1_m), r1=list(r2_m),
+                tof=tof_sec, mu=mu_m3s2,
+                cw=cw, multi_revs=max_revs,
+            )
+            # Iterate over all solutions returned
+            for idx in range(len(lp.v0)):
+                v1 = np.array(lp.v0[idx]) * _M2KM
+                v2 = np.array(lp.v1[idx]) * _M2KM
+                cost = np.linalg.norm(v1) + np.linalg.norm(v2)
+                if cost < best_cost:
+                    best_cost = cost
+                    best_v1, best_v2 = v1, v2
+                    found = True
+        except Exception:
+            continue
+
+    return best_v1, best_v2, (1 if found else -1)
 
 
 # =============================================================================
@@ -176,9 +217,11 @@ def load_kernels(bsp_folder_name, generic_kernels_path):
     asteroid_list = []
     for bsp_path in bsp_files:
         spiceypy.furnsh(bsp_path)
-        ids = spiceypy.spkobj(bsp_path)
+        id_cell = spiceypy.spkobj(bsp_path)
+        # Extract integer NAIF IDs from the SpiceCell
+        int_ids = [id_cell[i] for i in range(spiceypy.card(id_cell))]
         name = os.path.splitext(os.path.basename(bsp_path))[0]
-        asteroid_list.append({'ID': ids, 'NAME': name})
+        asteroid_list.append({'ID': int_ids[0] if int_ids else 0, 'NAME': name})
     return asteroid_list
 
 
