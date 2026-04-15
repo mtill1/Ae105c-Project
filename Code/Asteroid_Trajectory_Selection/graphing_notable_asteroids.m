@@ -1,6 +1,0 @@
-clear;
-
-asteroid_list = LOAD_KERNELS("NOTABLE_ASTEROID_BSPs");
-GRAPH_ASTEROIDS(asteroid_list, 8, 80, 'Jan 1 12:00:00 UTC 2027', ...
-    'Dec 31 12:00:00 UTC 2031', ...
-    "Jan_1_2027-Dec_31_2031-Notable-Asteroids.mp4");
