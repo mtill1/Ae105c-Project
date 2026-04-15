@@ -394,29 +394,31 @@ MAX_MISSION_DURATION = 14 * YEAR  # 2035 launch + 14yr < 2050 BSP coverage
 
 ## 7. Results Summary
 
-### 7.1 Top 15 Paths (from 15-asteroid two-level optimization)
+### 7.1 Top 15 Paths (from 30-asteroid two-level optimization)
 
-| Rank | Path (Earth ->) | Total dV (km/s) | Launch dV (km/s) |
-|------|-----------------|-----------------|-----------------|
-| 1 | Peraga -> Fortuna -> Thekla | 13.44 | 6.09 |
-| 2 | Peraga -> Fortuna -> Vibilia | 14.66 | 6.09 |
-| 3 | Fortuna -> Thekla -> Erato | 14.78 | 6.71 |
-| 4 | Fortuna -> Thekla -> Aegina | 14.87 | 6.71 |
-| 5 | Peraga -> Fortuna -> Aegina | 15.46 | 6.09 |
-| 6 | Peraga -> Antiope -> Vibilia | 15.62 | 5.97 |
-| 7 | Fortuna -> Peraga -> Themis | 15.81 | 6.49 |
-| 8 | Peraga -> Fortuna -> Erato | 15.91 | 6.30 |
-| 9 | Fortuna -> Peraga -> Thekla | 16.05 | 5.41 |
-| 10 | Fortuna -> Thekla -> Circe | 16.13 | 6.74 |
-| 11 | Circe -> Doris -> Concordia | 16.18 | 6.62 |
-| 12 | Fortuna -> Vibilia -> Antiope | 16.20 | 6.38 |
-| 13 | Fortuna -> Peraga -> Aglaja | 16.33 | 6.34 |
-| 14 | Aegina -> Themis -> Doris | 16.49 | 6.24 |
-| 15 | Peraga -> Fortuna -> Concordia | 17.54 | 7.09 |
+Optimized over 24,360 valid triplets from 30 asteroids (coarse DE + fine DE on top 15):
 
-### 7.2 Best Path Timeline
+| Rank | Path (Earth ->) | Total dV (km/s) | Launch dV (km/s) | Compositions |
+|------|-----------------|-----------------|-----------------|--------------|
+| 1 | **Peraga -> Fortuna -> Thekla** | **13.44** | 6.09 | C -> C -> C |
+| 2 | Peraga -> Fortuna -> Massalia | 13.75 | 6.09 | C -> C -> S |
+| 3 | **Hertha -> Lutetia -> Erato** | **13.91** | 6.64 | M -> M -> C |
+| 4 | Peraga -> Massalia -> Fortuna | 14.12 | 6.09 | C -> S -> C |
+| 5 | Hertha -> Lutetia -> Polyxo | 14.17 | 6.63 | M -> M -> C |
+| 6 | Hertha -> Lutetia -> Klymene | 14.30 | 6.74 | M -> M -> C |
+| 7 | Hertha -> Lutetia -> Themis | 14.36 | 6.63 | M -> M -> C |
+| 8 | Massalia -> Peraga -> Fortuna | 14.37 | 5.37 | S -> C -> C |
+| 9 | Urania -> Aegina -> Klymene | 14.38 | 6.22 | S -> C -> C |
+| 10 | Peraga -> Fortuna -> Parthenope | 14.56 | 6.09 | C -> C -> S |
+| 11 | Peraga -> Pales -> Erato | 14.56 | 6.08 | C -> C -> C |
+| 12 | **Massalia -> Fortuna -> Psyche** | **14.61** | 6.35 | **S -> C -> M** |
+| 13 | Fortuna -> Thekla -> Erato | 14.78 | 6.71 | C -> C -> C |
+| 14 | Urania -> Ate -> Isolda | 14.78 | 5.74 | S -> C -> C |
+| 15 | Massalia -> Fortuna -> Thekla | 16.21 | 5.30 | S -> C -> C |
 
-**Earth -> Peraga -> Fortuna -> Thekla** (13.44 km/s total):
+### 7.2 Best Overall Path
+
+**Earth -> Peraga (Ch) -> Fortuna (Ch) -> Thekla (Ch)** — 13.44 km/s total dV:
 
 | Event | Date | Elapsed |
 |-------|------|---------|
@@ -427,9 +429,56 @@ MAX_MISSION_DURATION = 14 * YEAR  # 2035 launch + 14yr < 2050 BSP coverage
 | Depart Fortuna | 2033 Nov 26 | 3.9 yr |
 | Arrive Thekla | 2035 Jun 20 | 5.5 yr |
 
-### 7.3 Composition Note
+Trajectory animations:
+- `Renders/Asteroid_Plots/10_Best_Path_2D_Peraga-Fortuna-Thekla.gif`
+- `Renders/Asteroid_Plots/11_Best_Path_3D_Peraga-Fortuna-Thekla.gif`
 
-The top 15 paths above are all C-complex asteroids (Peraga=Ch, Fortuna=Ch, Thekla=Ch, etc.). For **compositional diversity** (C+S+M), the beam search with `composition_filter={'C', 'S', 'M'}` should be used, or the full 50-asteroid optimization expanded to include S-complex (Massalia, Vesta, Urania) and X/M-complex (Hertha, Lutetia, Psyche) targets.
+### 7.3 Best Compositionally Diverse Path (S + C + M)
+
+The mission requires visiting one asteroid from each of the three major compositional classes (C-complex carbonaceous, S-complex silicaceous, X/M-complex metallic) for comparative planetology. The best path achieving full diversity is:
+
+**Earth -> Massalia (S) -> Fortuna (C) -> Psyche (X/M)** — 14.61 km/s total dV:
+
+| Event | Date | Elapsed | Body | Composition |
+|-------|------|---------|------|-------------|
+| Earth departure | 2034 Jan 30 | 0 | Earth | -- |
+| Arrive Massalia | 2035 Jun 22 | 1.4 yr | 20 Massalia | S-type (silicaceous stony) |
+| Depart Massalia | 2035 Sep 21 | 1.6 yr | | Stay: 3.0 months |
+| Arrive Fortuna | 2037 Nov 16 | 3.8 yr | 19 Fortuna | Ch-type (hydrated carbonaceous) |
+| Depart Fortuna | 2038 Feb 16 | 4.0 yr | | Stay: 3.0 months |
+| Arrive Psyche | 2039 Sep 9 | 5.6 yr | 16 Psyche | X-type (metallic/enstatite) |
+
+**Delta-V breakdown:**
+- Launch dV (Earth departure): 6.35 km/s (C3 ~ 40 km^2/s^2)
+- Spacecraft dV (5 maneuvers): 14.61 km/s
+- Total mission dV: 20.96 km/s
+
+**Why these three targets:**
+- **Massalia (S)**: 67.8 km radius, a=2.41 AU, i=0.7°. One of the largest S-type asteroids. Very low inclination minimizes plane-change cost. Ordinary chondrite analogue — represents the most common inner solar system building material.
+- **Fortuna (Ch)**: 100 km radius, a=2.44 AU, i=1.6°. Hydrated carbonaceous asteroid (Ch subclass indicates aqueous alteration). Science interest: water-bearing minerals from early solar system processing.
+- **Psyche (X/M)**: 111 km radius, a=2.92 AU, i=3.1°. The target of NASA's Psyche mission (launched 2023). Believed to be an exposed planetary core — metallic iron-nickel. Visiting after the NASA mission provides complementary in-situ data.
+
+**Trajectory animations:**
+- `Renders/Asteroid_Plots/12_Diverse_Path_2D_Massalia-Fortuna-Psyche.gif`
+- `Renders/Asteroid_Plots/13_Diverse_Path_3D_Massalia-Fortuna-Psyche.gif`
+
+![2D trajectory animation](Renders/Asteroid_Plots/12_Diverse_Path_2D_Massalia-Fortuna-Psyche.gif)
+
+### 7.4 Composition Analysis
+
+The top 15 paths show clear patterns:
+
+| Pattern | Count | Best dV | Example |
+|---------|-------|---------|---------|
+| C -> C -> C | 4 | 13.44 | Peraga -> Fortuna -> Thekla |
+| M -> M -> C | 4 | 13.91 | Hertha -> Lutetia -> Erato |
+| C -> C -> S | 2 | 13.75 | Peraga -> Fortuna -> Massalia |
+| S -> C -> C | 2 | 14.37 | Massalia -> Peraga -> Fortuna |
+| C -> S -> C | 1 | 14.12 | Peraga -> Massalia -> Fortuna |
+| **S -> C -> M** | **1** | **14.61** | **Massalia -> Fortuna -> Psyche** |
+| S -> C -> C | 1 | 16.21 | Massalia -> Fortuna -> Thekla |
+
+The delta-V penalty for compositional diversity (S+C+M) over the pure-minimum (C+C+C) is only **1.17 km/s** (14.61 vs 13.44), a modest 8.7% increase that is well worth the scientific return of visiting all three asteroid classes.
 
 ---
 
