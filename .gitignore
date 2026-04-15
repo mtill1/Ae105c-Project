@@ -17,3 +17,8 @@ codegen/    # MATLAB Coder output
 *.mlappinstall
 *.mltbx
 .MATLABDriveTag
+
+# --- macOS / editor (local only) ---
+.DS_Store
+**/.DS_Store
+.cursorrules
