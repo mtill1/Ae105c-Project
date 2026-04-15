@@ -394,12 +394,70 @@ MAX_MISSION_DURATION = 14 * YEAR  # 2035 launch + 14yr < 2050 BSP coverage
 
 ## 7. Results Summary
 
-### 7.1 Top 15 Paths (from 30-asteroid two-level optimization)
+### 7.1 Top 15 Paths (from 50-asteroid GCP optimization)
 
-Optimized over 24,360 valid triplets from 30 asteroids (coarse DE + fine DE on top 15):
+Optimized over 117,600 valid triplets from all 50 notable asteroids using two-level optimization on Google Cloud (e2-standard-4 VM, 4 vCPU, 16 GB RAM). Coarse pass: 9 canonical Lambert evaluations per triplet (completed in 4.5 minutes). Fine pass: full differential evolution on top 50 candidates (completed in 2 minutes). **Total wall time: 6.5 minutes.**
+
+| Rank | Path (Earth ->) | Total dV (km/s) | Launch dV (km/s) |
+|------|-----------------|:---:|:---:|
+| 1 | **HERTHA -> LUTETIA -> HARMONIA** | **13.07** | 6.63 |
+| 2 | MISA -> MAJA -> PERAGA | 13.65 | 6.74 |
+| 3 | SILESIA -> ORTRUD -> ERATO | 14.54 | 7.22 |
+| 4 | ORTRUD -> ERATO -> SILESIA | 14.66 | 7.15 |
+| 5 | MISA -> PALES -> ERATO | 14.79 | 6.74 |
+| 6 | MISA -> MAJA -> KLYMENE | 15.03 | 6.74 |
+| 7 | SILESIA -> ERATO -> ORTRUD | 15.27 | 7.22 |
+| 8 | ORTRUD -> ERATO -> PALES | 15.41 | 7.15 |
+| 9 | PALES -> MISA -> MAJA | 15.45 | 7.02 |
+| 10 | ERATO -> ORTRUD -> PALES | 15.55 | 7.10 |
+| 11 | ERATO -> MASSALIA -> MISA | 15.64 | 7.09 |
+| 12 | ERATO -> ORTRUD -> SILESIA | 15.72 | 7.10 |
+| 13 | PALES -> ORTRUD -> ERATO | 15.76 | 7.02 |
+| 14 | SILESIA -> ERATO -> THEKLA | 15.87 | 7.22 |
+| 15 | IPHIGENIA -> POLYXO -> CAMPANIA | 15.88 | 7.06 |
+
+### 7.2 Best Overall Path (50-asteroid pool)
+
+**Earth -> 135 Hertha (M) -> 21 Lutetia (M/X) -> 40 Harmonia (S)** — 13.07 km/s total dV:
+
+| Event | Date | Elapsed |
+|-------|------|---------|
+| Earth departure | 2031 Sep 01 | 0 yr |
+| Arrive 135 Hertha | 2033 Mar 07 | 1.5 yr |
+| Depart Hertha | 2034 Mar 07 | 2.5 yr |
+| Arrive 21 Lutetia | 2036 Feb 08 | 4.4 yr |
+| Depart Lutetia | 2036 May 10 | 4.7 yr |
+| Arrive 40 Harmonia | 2038 Mar 07 | 6.5 yr |
+
+**Delta-v breakdown:**
+
+| Maneuver | dV (km/s) |
+|----------|:---------:|
+| Earth departure | 6.63 |
+| Hertha arrival | 3.16 |
+| Hertha departure | 0.24 |
+| Lutetia arrival | 1.17 |
+| Lutetia departure | 0.90 |
+| Harmonia arrival | 0.98 |
+| **Total** | **13.07** |
+
+**Stay durations:** 12.0 months at Hertha, 3.0 months at Lutetia.
+
+**Why these targets:**
+- **135 Hertha (M-type)**: 39 km radius, a=2.43 AU, i=2.3°. Metallic asteroid — possible exposed iron-nickel core fragment. Low inclination keeps plane-change cost minimal.
+- **21 Lutetia (M/X-type)**: 49 km radius, a=2.44 AU, i=3.1°. Rosetta flyby target (2010) — surface was found to be unexpectedly non-metallic despite M-type classification, making it scientifically puzzling. A dedicated rendezvous would resolve this.
+- **40 Harmonia (S-type)**: 54 km radius, a=2.27 AU, i=4.3°. Silicaceous stony asteroid. Located at a relatively low SMA (inner main belt), reducing the total transfer distance.
+
+Trajectory animations:
+- `Renders/Asteroid_Plots/10_Trajectory_2D_HERTHA_LUTETIA_HARMONIA.gif`
+- `Renders/Asteroid_Plots/11_Trajectory_3D_HERTHA_LUTETIA_HARMONIA.gif`
+
+### 7.3 Previous Results (30-asteroid subset)
+
+The earlier 30-asteroid optimization (prior to the full 50-asteroid GCP run) found:
 
 | Rank | Path (Earth ->) | Total dV (km/s) | Launch dV (km/s) | Compositions |
-|------|-----------------|-----------------|-----------------|--------------|
+|------|-----------------|:---:|:---:|--------------|
 | 1 | **Peraga -> Fortuna -> Thekla** | **13.44** | 6.09 | C -> C -> C |
 | 2 | Peraga -> Fortuna -> Massalia | 13.75 | 6.09 | C -> C -> S |
 | 3 | **Hertha -> Lutetia -> Erato** | **13.91** | 6.64 | M -> M -> C |
@@ -416,9 +474,7 @@ Optimized over 24,360 valid triplets from 30 asteroids (coarse DE + fine DE on t
 | 14 | Urania -> Ate -> Isolda | 14.78 | 5.74 | S -> C -> C |
 | 15 | Massalia -> Fortuna -> Thekla | 16.21 | 5.30 | S -> C -> C |
 
-### 7.2 Best Overall Path
-
-**Earth -> Peraga (Ch) -> Fortuna (Ch) -> Thekla (Ch)** — 13.44 km/s total dV:
+**Best path from 30-asteroid run: Earth -> Peraga (Ch) -> Fortuna (Ch) -> Thekla (Ch)** — 13.44 km/s total dV:
 
 | Event | Date | Elapsed |
 |-------|------|---------|
@@ -433,7 +489,7 @@ Trajectory animations:
 - `Renders/Asteroid_Plots/10_Best_Path_2D_Peraga-Fortuna-Thekla.gif`
 - `Renders/Asteroid_Plots/11_Best_Path_3D_Peraga-Fortuna-Thekla.gif`
 
-### 7.3 Best Compositionally Diverse Path (S + C + M)
+### 7.4 Best Compositionally Diverse Path (S + C + M, from 30-asteroid run)
 
 The mission requires visiting one asteroid from each of the three major compositional classes (C-complex carbonaceous, S-complex silicaceous, X/M-complex metallic) for comparative planetology. The best path achieving full diversity is:
 
@@ -464,7 +520,7 @@ The mission requires visiting one asteroid from each of the three major composit
 
 ![2D trajectory animation](Renders/Asteroid_Plots/12_Diverse_Path_2D_Massalia-Fortuna-Psyche.gif)
 
-### 7.4 Composition Analysis
+### 7.5 Composition Analysis
 
 The top 15 paths show clear patterns:
 
@@ -479,6 +535,29 @@ The top 15 paths show clear patterns:
 | S -> C -> C | 1 | 16.21 | Massalia -> Fortuna -> Thekla |
 
 The delta-V penalty for compositional diversity (S+C+M) over the pure-minimum (C+C+C) is only **1.17 km/s** (14.61 vs 13.44), a modest 8.7% increase that is well worth the scientific return of visiting all three asteroid classes.
+
+### 7.6 Compute Infrastructure
+
+The 50-asteroid optimization was run on **Google Cloud Platform** Compute Engine:
+
+| Parameter | Value |
+|-----------|-------|
+| VM type | e2-standard-4 (4 vCPU, 16 GB RAM) |
+| OS | Debian 12 |
+| Python | 3.11 (Miniconda) |
+| pykep | 2.6 (conda-forge) |
+| Region | us-west1-b |
+| Total wall time | 6.5 minutes |
+| Total cost | ~$0.08 |
+
+**Two-level optimization performance:**
+
+| Phase | Triplets | Method | Time |
+|-------|----------|--------|------|
+| Coarse screening | 117,600 | 9 canonical Lambert samples per triplet | 4.5 min |
+| Fine optimization | 50 | Full differential_evolution (maxiter=300, polish=True) | 2.0 min |
+
+The coarse screening evaluates 9 fixed time-of-flight configurations (3 launch dates x 3 transfer durations) per triplet, each requiring 3 Lambert solves = 27 Lambert solves per triplet. This is ~30x faster than the previous approach (differential evolution with maxiter=30 per triplet) while providing sufficient discrimination to identify the top candidates.
 
 ---
 
