@@ -17,3 +17,13 @@ codegen/    # MATLAB Coder output
 *.mlappinstall
 *.mltbx
 .MATLABDriveTag
+
+# Large SPICE kernel files (exceed GitHub 100MB limit)
+gcp_deploy/generic_kernels/spk/planets/*.bsp
+gcp_deploy/generic_kernels/spk/satellites/*.bsp
+generic_kernels/
+
+# Other large/binary files
+*.bsp
+!NOTABLE_ASTEROID_BSPs/*.bsp
+!SPICE_BSPs/*.bsp
