@@ -1,8 +1,0 @@
-numpy
-scipy
-pykep
-spiceypy
-matplotlib
-tqdm
-pandas
-imageio

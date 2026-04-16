@@ -194,7 +194,24 @@ def compute_flyby_dv(v_sc_in_km_s, v_sc_out_km_s, v_planet_km_s,
     mu_m3s2 = mu_planet_km3s2 * 1e9
     safe_r_m = safe_radius_km * _KM2M
 
-    dv_ms = pk.fb_dv(list(v_rel_in), list(v_rel_out), mu_m3s2, safe_r_m)
+    # Try pykep fb_dv first, fall back to manual calculation
+    if hasattr(pk, 'fb_dv'):
+        dv_ms = pk.fb_dv(list(v_rel_in), list(v_rel_out), mu_m3s2, safe_r_m)
+    else:
+        # Manual powered flyby delta-v
+        v_in_mag = np.linalg.norm(v_rel_in)
+        v_out_mag = np.linalg.norm(v_rel_out)
+        if v_in_mag < 1e-10 or v_out_mag < 1e-10:
+            return 0.0
+        cos_delta = np.clip(np.dot(v_rel_in, v_rel_out) / (v_in_mag * v_out_mag), -1, 1)
+        delta_des = np.arccos(cos_delta)
+        sin_arg = min(1.0, 1.0 / (1.0 + safe_r_m * v_in_mag**2 / mu_m3s2))
+        delta_max = 2 * np.arcsin(sin_arg)
+        if delta_des <= delta_max and abs(v_in_mag - v_out_mag) < 1e-6:
+            return 0.0
+        v_p_in = np.sqrt(v_in_mag**2 + 2 * mu_m3s2 / safe_r_m)
+        v_p_out = np.sqrt(v_out_mag**2 + 2 * mu_m3s2 / safe_r_m)
+        dv_ms = abs(v_p_out - v_p_in)
     return dv_ms * _M2KM
 
 

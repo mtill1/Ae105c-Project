@@ -100,6 +100,15 @@ Given N candidate asteroids, we need to find the best ordered triplet out of N x
 
 **Beam search** (`beam_search`): Build the path one leg at a time, keeping only the top-K partial sequences at each stage. For N=50 asteroids with beam width K=10, this evaluates ~1,500 single-leg problems instead of 117,600 full triplets. Supports science-weighted scoring.
 
+### Gravity Assist Options
+
+For each asteroid triplet, the optimizer automatically evaluates three trajectory architectures:
+- **Direct transfer** (Earth -> A1 -> A2 -> A3)
+- **Lunar gravity assist** (Earth -> Moon flyby -> A1 -> A2 -> A3) — the Moon flyby occurs 1-10 days after launch and can boost the spacecraft's heliocentric velocity
+- **Mars gravity assist** (Earth -> Mars flyby -> A1 -> A2 -> A3) — Mars flyby 0.3-3 years after launch provides a larger velocity change for reaching distant asteroids
+
+The optimizer automatically selects whichever architecture gives the lowest delta-v for each triplet. No manual selection is needed.
+
 ### Mars Flyby Variant
 
 The Mars variant adds a 7th decision variable (Earth-to-Mars transfer time) and computes the **powered flyby delta-v** at Mars. The flyby delta-v is zero if Mars's gravity alone provides sufficient turning; otherwise, a periapsis burn is computed using pykep's `fb_dv()` function. Minimum flyby altitude is 200 km above Mars's surface.

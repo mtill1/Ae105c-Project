@@ -245,6 +245,27 @@ This replaced the original Chebyshev grid search (540 initial guesses + L-BFGS-B
 | Asteroid ephemeris | Individual BSP files (2025-2050) from JPL Horizons |
 | Gravitational parameter | pykep.MU_SUN (converted to km^3/s^2) |
 
+### 4.5.1 Gravity Assist Architectures
+
+For each asteroid triplet, the optimizer evaluates three trajectory architectures and selects the one with the lowest total delta-v:
+
+| Architecture | Route | Variables | Flyby Parameters |
+|---|---|---|---|
+| Direct | Earth -> A1 -> A2 -> A3 | 6D | — |
+| Moon flyby | Earth -> Moon -> A1 -> A2 -> A3 | 7D | Alt > 100 km, TOF 1-10 days |
+| Mars flyby | Earth -> Mars -> A1 -> A2 -> A3 | 7D | Alt > 200 km, TOF 0.3-3 years |
+
+The flyby delta-v is computed using the powered gravity assist equation:
+- If the required turn angle <= maximum achievable turn at the minimum flyby altitude, the flyby is unpowered (dv = 0)
+- Otherwise, a periapsis burn is required: dv = |v_p_out - v_p_in| where v_p = sqrt(v_inf^2 + 2*mu/r_p)
+
+The `optimize_best_architecture()` function runs all three architectures in both the coarse and fine passes, selecting the best per triplet. This means the optimizer automatically discovers when a gravity assist helps — no manual architecture selection needed.
+
+Key functions:
+- `compute_path_with_flyby()` — Delta-v for any flyby trajectory
+- `optimize_times_flyby()` — Full DE optimization with flyby body (7 variables)
+- `optimize_best_architecture()` — Tries all 3 architectures, returns best
+
 ### 4.6 MGA-DSM Variant (Deep Space Maneuvers)
 
 An extended 9-dimensional formulation adds mid-leg Deep Space Maneuvers:
@@ -489,11 +510,36 @@ Trajectory animations:
 - `Renders/Asteroid_Plots/10_Best_Path_2D_Peraga-Fortuna-Thekla.gif`
 - `Renders/Asteroid_Plots/11_Best_Path_3D_Peraga-Fortuna-Thekla.gif`
 
-### 7.4 Best Compositionally Diverse Path (S + C + M, from 30-asteroid run)
+### 7.4 Best Compositionally Diverse Paths (C + S + X/M, 50-asteroid GCP run)
 
-The mission requires visiting one asteroid from each of the three major compositional classes (C-complex carbonaceous, S-complex silicaceous, X/M-complex metallic) for comparative planetology. The best path achieving full diversity is:
+The mission requires visiting one asteroid from each of the three major compositional classes (C-complex carbonaceous, S-complex silicaceous, X/M-complex metallic) for comparative planetology. From the full 50-asteroid pool, 8,880 valid C+S+X/M triplets were evaluated (37C x 8S x 5M x 6 orderings). **Run on GCP in 40 minutes.**
 
-**Earth -> Massalia (S) -> Fortuna (C) -> Psyche (X/M)** — 14.61 km/s total dV:
+| Rank | Path (Earth ->) | Total dV (km/s) | Launch dV | Compositions |
+|------|-----------------|:---:|:---:|:---:|
+| 1 | **HERTHA -> POLYXO -> ALKESTE** | **13.80** | 6.62 | X/M + C + S |
+| 2 | VIRGINIA -> PSYCHE -> PARTHENOPE | 13.82 | 7.24 | C + X/M + S |
+| 3 | MASSALIA -> MISA -> PSYCHE | 14.05 | 6.25 | S + C + X/M |
+| 4 | MASSALIA -> PSYCHE -> NUWA | 14.10 | 6.28 | S + X/M + C |
+| 5 | MASSALIA -> PSYCHE -> CONCORDIA | 14.22 | 6.28 | S + X/M + C |
+| 6 | MASSALIA -> NUWA -> PSYCHE | 14.42 | 6.29 | S + C + X/M |
+| 7 | PERAGA -> MASSALIA -> PSYCHE | 14.44 | 6.09 | C + S + X/M |
+| 8 | URANIA -> IRMA -> PSYCHE | 14.59 | 5.33 | S + C + X/M |
+| 9 | MASSALIA -> FORTUNA -> PSYCHE | 14.61 | 6.35 | S + C + X/M |
+| 10 | HEDDA -> BEATRIX -> PROSERPINA | 14.62 | 5.20 | C + X/M + S |
+
+**Best diverse path: Earth -> 135 Hertha (X/M) -> 308 Polyxo (C) -> 124 Alkeste (S)** — 13.80 km/s total dV.
+
+- **135 Hertha (Xk-type)**: Metallic/enstatite asteroid, 39 km radius, a=2.43 AU. Possible exposed planetary core fragment.
+- **308 Polyxo (T-type)**: Primitive transitional (C-complex), 70 km radius, a=2.75 AU. Unusual T-type taxonomy — transitional between carbonaceous and silicaceous.
+- **124 Alkeste (S-type)**: Silicaceous stony, 38 km radius, a=2.63 AU. Ordinary chondrite analogue.
+
+The delta-V penalty for requiring compositional diversity over the unconstrained minimum (13.07 km/s Hertha->Lutetia->Harmonia) is only **0.73 km/s** (13.80 vs 13.07), a modest 5.6% increase.
+
+Note: Psyche appears in 6 of the top 10 diverse paths (ranks 2-9), confirming its accessibility as the primary X/M-complex target. Hertha appears in the #1 path as an alternative M-type.
+
+### 7.4.1 Previous best diverse path (30-asteroid run)
+
+**Earth -> Massalia (S) -> Fortuna (C) -> Psyche (X/M)** — 14.61 km/s total dV (now rank #9 in the expanded search):
 
 | Event | Date | Elapsed | Body | Composition |
 |-------|------|---------|------|-------------|

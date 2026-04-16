@@ -8,7 +8,8 @@ import matplotlib.pyplot as plt
 
 from core import load_kernels, get_state, MU_SUN
 from optimization import (generate_optimized_data, generate_mars_transfer_optimized,
-                         two_level_optimize, beam_search)
+                         two_level_optimize, beam_search,
+                         load_composition_map)
 from visualization import flightpath_animation, graph_asteroids
 
 
@@ -274,6 +275,49 @@ def run_two_level_optimize(science_csv=None, alpha=1.0):
 
 
 # ============================================================================
+# DIVERSE COMPOSITION OPTIMIZATION (C + S + X/M)
+# ============================================================================
+
+def run_diverse_optimize(tradeoff_csv='asteroid_tradeoff.csv', top_n=50,
+                         required_compositions=None):
+    """Run two-level optimization with composition diversity constraint.
+
+    Only considers triplets where the three asteroids come from different
+    composition classes (C-complex, S-complex, X/M-complex).
+
+    Parameters
+    ----------
+    tradeoff_csv : str — path to asteroid_tradeoff.csv (for composition data)
+    top_n : int — number of top candidates for fine optimization
+    required_compositions : set or None — e.g. {'C', 'S', 'X/M'} (default).
+        If None, requires all three to be different classes.
+    """
+    bsp_folder = "NOTABLE_ASTEROID_BSPs"
+    generic_kernels = "/Users/rebnoob/Documents/ae105/generic_kernels"
+
+    asteroid_list = load_kernels(bsp_folder, generic_kernels)
+
+    comp_map = load_composition_map(tradeoff_csv)
+
+    if required_compositions is None:
+        required_compositions = {'C', 'S', 'X/M'}
+
+    # Count how many we have of each class
+    counts = {}
+    for a in asteroid_list:
+        cls = comp_map.get(a['NAME'].upper(), 'Unknown')
+        counts[cls] = counts.get(cls, 0) + 1
+    print(f"Asteroid composition breakdown: {counts}")
+    print(f"Required: {' + '.join(sorted(required_compositions))}\n")
+
+    return two_level_optimize(
+        asteroid_list, 0, 0, 0,
+        'Jan 1 12:00:00 UTC 2027', 'Dec 31 12:00:00 UTC 2035',
+        top_n=top_n, comp_map=comp_map,
+        required_compositions=required_compositions)
+
+
+# ============================================================================
 # BEAM SEARCH (structured multi-stage path selection)
 # ============================================================================
 
@@ -306,10 +350,11 @@ def run_beam_search(beam_width=10, science_csv=None, alpha=1.0):
 
 if __name__ == '__main__':
     commands = {
+        'diverse_optimize': 'C+S+X/M composition-diverse optimization (RECOMMENDED)',
+        'two_level_optimize': 'Two-level: coarse filter + fine optimize (any composition)',
+        'beam_search': 'Beam search: structured multi-stage selection',
         'asteroid_selector': 'Brute-force N^3 optimization (original)',
         'mars_transfer_selector': 'Mars flyby optimization',
-        'two_level_optimize': 'Two-level: coarse filter + fine optimize (recommended)',
-        'beam_search': 'Beam search: structured multi-stage selection',
         'find_best_path': 'Find top paths from saved results',
         'graph_all_best_paths': 'Animate all best paths',
         'graphing_notable_asteroids': 'Animate notable asteroid orbits',

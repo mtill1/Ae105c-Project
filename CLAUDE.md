@@ -102,6 +102,8 @@ Wraps pykep and spiceypy behind a clean interface. All units: **km, km/s, km^3/s
 | `optimize_times_quick(...)` | Fast coarse version (30 iters) for two-level first pass. |
 | `two_level_optimize(...)` | Coarse filter all triplets, fine-optimize top-N. Accepts science scores. |
 | `beam_search(...)` | Multi-stage K-best search. Keeps top-K at each leg. |
+| `optimize_best_architecture(...)` | Tries direct + Moon flyby + Mars flyby, returns best |
+| `compute_path_with_flyby(...)` | Delta-v for Earth -> flyby -> A1 -> A2 -> A3 |
 | `generate_optimized_data(...)` | Brute-force N^3 loop (legacy). |
 
 ### greedy.py — Greedy algorithm (legacy, suboptimal)
@@ -129,12 +131,51 @@ Reads `sbdb_query_results.csv` from JPL SBDB and outputs `asteroid_tradeoff.csv`
 - **Mission duration**: Hard cap at 14 years. Score functions return 1e3 for violations.
 - **Delta-v total**: Sum of **all 6 maneuver norms** including Earth departure.
 - **Science integration**: `two_level_optimize` and `beam_search` accept `science_scores` + `alpha`. Example: `alpha=0.7` = 70% delta-v + 30% science.
+- **Gravity assists**: Moon and Mars flybys are automatically evaluated for every triplet. The optimizer picks the best architecture (direct, Moon flyby, or Mars flyby) per triplet.
+
+## Current Best Results (saved — do NOT re-run unless asked)
+
+Results are saved as pickle files in `optimal_asteroid_paths/`. Load with:
+```python
+import pickle
+with open('optimal_asteroid_paths/results_69ast_ga.pkl', 'rb') as f:
+    results = pickle.load(f)  # list of (i, j, k, result_dict)
+```
+
+### Best paths (69 asteroids, C+S+X/M diverse, gravity assists)
+
+| Rank | Path | dV (km/s) | Flyby |
+|------|------|:---------:|:-----:|
+| 1 | **Hertha [X/M] -> Polyxo [C] -> Alkeste [S]** | **9.40** | Mars |
+| 2 | Virginia [C] -> Psyche [X/M] -> Parthenope [S] | 9.51 | Moon |
+| 3 | Massalia [S] -> Misa [C] -> Psyche [X/M] | 9.77 | Moon |
+| 4 | Massalia [S] -> Psyche [X/M] -> Nuwa [C] | 9.96 | Moon |
+| 5 | Psyche [X/M] -> Polyxo [C] -> Alkeste [S] | 10.01 | Mars |
+
+### All saved result files
+
+| File | Asteroids | Composition | Gravity Assist | Best dV |
+|------|:---------:|:-----------:|:--------------:|:-------:|
+| `results_69ast_ga.pkl` | 69 | C+S+X/M | Yes (Moon+Mars) | 9.40 |
+| `results_diverse_CSM.pkl` | 50 | C+S+X/M | No | 13.80 |
+| `results_diverse_science_weighted.pkl` | 50 | C+S+X/M | No (alpha=0.5) | 14.61 |
+| `results_50ast_full.pkl` | 50 | Any | No | 13.07 |
+
+## GCP Compute
+
+- **Project**: `project-8b1249f5-4cb6-4dad-8a9`
+- **Machine**: `e2-standard-12` (12 vCPU — max allowed by quota CPUS_ALL_REGIONS=12)
+- **Zone**: `us-west1-b`
+- **Setup**: Miniconda + Python 3.11 + pykep from conda-forge
+- **Scripts**: `Python_Consolidated/gcp/` (run_optimization.py, run_diverse.py, etc.)
+- **Auth**: `gcloud auth login` required before each session
 
 ## Conventions
 
-- All active Python code lives in `Python_Consolidated/` (6 files, no subpackages)
+- All active Python code lives in `Python_Consolidated/` (6 files + gcp/ subfolder)
+- GCP scripts in `Python_Consolidated/gcp/` import from `..` (no code duplication)
 - Cross-file imports: `from core import ...`, `from optimization import ...`
-- Asteroid BSPs named after the asteroid: `THEMIS.bsp`, `HYGIEA.bsp`
+- Asteroid BSPs in `NOTABLE_ASTEROID_BSPs/` (69 asteroids, merged from original 50 + extended pool)
 - Output saved to `optimal_asteroid_paths/` as `.pkl` (pickle)
 - Renders saved to `Renders/Asteroid_Plots/`, numbered (01_, 02_, ...)
 - Reference frame: `ECLIPJ2000`, observer: `10` (Sun), aberration: `NONE`
@@ -148,10 +189,10 @@ asteroid_list = load_kernels("NOTABLE_ASTEROID_BSPs",
                              "/Users/rebnoob/Documents/ae105/generic_kernels")
 ```
 
-## Asteroid Pools
+## Asteroid Pool
 
-| Pool | Count | Location |
-|------|-------|----------|
-| Notable (primary) | 50 | `NOTABLE_ASTEROID_BSPs/` |
-| Extended | 49 | `SPICE_BSPs/` |
-| Science-ranked | 407 | `asteroid_tradeoff.csv` |
+69 asteroids in `NOTABLE_ASTEROID_BSPs/` (merged from original 50 notable + 23 from SPICE_BSPs, minus 4 with bad BSP coverage).
+
+Composition: 39 C-complex, 12 S-complex, 5 X/M-complex, 13 Unknown.
+
+Science-ranked table: `asteroid_tradeoff.csv` (407 asteroids).
