@@ -57,10 +57,12 @@ def _eval_fine(args):
 
 
 def build_science_scores(tradeoff_csv):
-    """Build enhanced science scores with more spread than Total_WeightedScore.
-    
-    35% science potential + 25% mass + 25% radius + 15% low-inclination bonus.
-    Returns dict: UPPERCASE name -> score (range ~5-8).
+    """Build science scores using the tradeoff table weights (excluding delta-v).
+
+    Original weights: dv=30%, inc=15%, sci=15%, mass=12%, radius=13%, ecc=7%, rot=5%, sma=3%
+    Renormalized (without dv 30%): sci=21.4%, inc=21.4%, radius=18.6%, mass=17.1%,
+                                    ecc=10%, rot=7.1%, sma=4.3%
+    Returns dict: UPPERCASE name -> score (1-10 scale).
     """
     df = pd.read_csv(tradeoff_csv)
     scores = {}
@@ -71,11 +73,18 @@ def build_science_scores(tradeoff_csv):
             name = ' '.join(parts[1:]).upper()
         else:
             name = raw.upper()
-        sci = float(row['SciPotential_Score_1to10'])
-        mass = float(row['Sub_Mass_Score'])
+
+        sci   = float(row['SciPotential_Score_1to10'])
+        inc   = float(row['Sub_Inc_Score'])
         radius = float(row['Sub_Radius_Score'])
-        inc = float(row['Sub_Inc_Score'])
-        scores[name] = 0.35 * sci + 0.25 * mass + 0.25 * radius + 0.15 * inc
+        mass  = float(row['Sub_Mass_Score'])
+        ecc   = float(row['Sub_Ecc_Score'])
+        rot   = float(row['Sub_RotPer_Score'])
+        sma   = float(row['Sub_SMA_Score'])
+
+        # Renormalized weights (sum to 1.0, dv excluded)
+        scores[name] = (0.214 * sci + 0.214 * inc + 0.186 * radius
+                        + 0.171 * mass + 0.100 * ecc + 0.071 * rot + 0.043 * sma)
     return scores
 
 
