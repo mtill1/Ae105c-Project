@@ -142,32 +142,43 @@ with open('optimal_asteroid_paths/results_69ast_ga.pkl', 'rb') as f:
     results = pickle.load(f)  # list of (i, j, k, result_dict)
 ```
 
-### Best paths (69 asteroids, C+S+X/M diverse, gravity assists)
+### Best paths — minimum delta-v (69 asteroids, C+S+X/M, gravity assists)
 
 | Rank | Path | dV (km/s) | Flyby |
 |------|------|:---------:|:-----:|
 | 1 | **Hertha [X/M] -> Polyxo [C] -> Alkeste [S]** | **9.40** | Mars |
 | 2 | Virginia [C] -> Psyche [X/M] -> Parthenope [S] | 9.51 | Moon |
 | 3 | Massalia [S] -> Misa [C] -> Psyche [X/M] | 9.77 | Moon |
-| 4 | Massalia [S] -> Psyche [X/M] -> Nuwa [C] | 9.96 | Moon |
-| 5 | Psyche [X/M] -> Polyxo [C] -> Alkeste [S] | 10.01 | Mars |
+
+### Best paths — science priority (70% science, 30% dv, gravity assists)
+
+| Rank | Path | dV | Science | Score | Flyby |
+|------|------|:--:|:------:|:-----:|:-----:|
+| 1 | **Aegina [C] -> Beatrix [X/M] -> Vesta [S]** | **10.8** | **20.1** | **10.14** | Mars |
+| 2 | Massalia [S] -> Psyche [X/M] -> Themis [C] | 10.7 | 20.0 | 10.25 | Moon |
+| 3 | Massalia [S] -> Psyche [X/M] -> Concordia [C] | 10.1 | 19.7 | 10.25 | Moon |
+
+Science score uses tradeoff table weights (renormalized without dv): 21.4% sci potential + 21.4% inclination + 18.6% radius + 17.1% mass + 10% eccentricity + 7.1% rotation + 4.3% SMA.
 
 ### All saved result files
 
-| File | Asteroids | Composition | Gravity Assist | Best dV |
-|------|:---------:|:-----------:|:--------------:|:-------:|
-| `results_69ast_ga.pkl` | 69 | C+S+X/M | Yes (Moon+Mars) | 9.40 |
-| `results_diverse_CSM.pkl` | 50 | C+S+X/M | No | 13.80 |
-| `results_diverse_science_weighted.pkl` | 50 | C+S+X/M | No (alpha=0.5) | 14.61 |
-| `results_50ast_full.pkl` | 50 | Any | No | 13.07 |
+| File | Asteroids | Composition | GA | Science | Best |
+|------|:---------:|:-----------:|:--:|:-------:|:----:|
+| `results_69ast_ga.pkl` | 69 | C+S+X/M | Moon+Mars | None | 9.40 km/s |
+| `results_science_priority_v2.pkl` | 69 | C+S+X/M | Moon+Mars | 70% (tradeoff weights) | score 10.14 |
+| `results_diverse_CSM.pkl` | 50 | C+S+X/M | No | None | 13.80 km/s |
+| `results_science_priority.pkl` | 69 | C+S+X/M | Moon+Mars | 70% (old weights) | score 10.05 |
+| `results_diverse_science_weighted.pkl` | 50 | C+S+X/M | No | 50% | 14.61 km/s |
+| `results_50ast_full.pkl` | 50 | Any | No | None | 13.07 km/s |
 
 ## GCP Compute
 
 - **Project**: `project-8b1249f5-4cb6-4dad-8a9`
-- **Machine**: `e2-standard-12` (12 vCPU — max allowed by quota CPUS_ALL_REGIONS=12)
+- **Machine**: `e2-custom-12-49152` (12 vCPU — max allowed by quota CPUS_ALL_REGIONS=12)
 - **Zone**: `us-west1-b`
+- **GCS bucket**: `gs://ae105c-asteroid-data` (kernels + BSPs, ~30 sec pull vs 10 min SCP)
 - **Setup**: Miniconda + Python 3.11 + pykep from conda-forge
-- **Scripts**: `Python_Consolidated/gcp/` (run_optimization.py, run_diverse.py, etc.)
+- **Scripts**: `Python_Consolidated/gcp/` (run_optimization.py, run_diverse.py, run_science_priority.py)
 - **Auth**: `gcloud auth login` required before each session
 
 ## Conventions

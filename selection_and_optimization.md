@@ -566,44 +566,91 @@ Note: Psyche appears in 6 of the top 10 diverse paths (ranks 2-9), confirming it
 
 ![2D trajectory animation](Renders/Asteroid_Plots/12_Diverse_Path_2D_Massalia-Fortuna-Psyche.gif)
 
-### 7.5 Composition Analysis
+### 7.5 Gravity Assist Results (69 asteroids, C+S+X/M, Moon+Mars flybys)
 
-The top 15 paths show clear patterns:
+Expanding to 69 asteroids and adding Moon and Mars gravity assists dramatically improved results. Every top-15 path uses a flyby — no direct transfers made the cut. **Run on GCP (e2-custom-12, 12 vCPU) with parallel multiprocessing in 10 minutes.**
 
-| Pattern | Count | Best dV | Example |
-|---------|-------|---------|---------|
-| C -> C -> C | 4 | 13.44 | Peraga -> Fortuna -> Thekla |
-| M -> M -> C | 4 | 13.91 | Hertha -> Lutetia -> Erato |
-| C -> C -> S | 2 | 13.75 | Peraga -> Fortuna -> Massalia |
-| S -> C -> C | 2 | 14.37 | Massalia -> Peraga -> Fortuna |
-| C -> S -> C | 1 | 14.12 | Peraga -> Massalia -> Fortuna |
-| **S -> C -> M** | **1** | **14.61** | **Massalia -> Fortuna -> Psyche** |
-| S -> C -> C | 1 | 16.21 | Massalia -> Fortuna -> Thekla |
+| Rank | Path (Earth ->) | Total dV (km/s) | Flyby | Compositions |
+|------|-----------------|:---:|:---:|:---:|
+| 1 | **HERTHA -> POLYXO -> ALKESTE** | **9.40** | **MARS** | X/M+C+S |
+| 2 | VIRGINIA -> PSYCHE -> PARTHENOPE | 9.51 | MOON | C+X/M+S |
+| 3 | MASSALIA -> MISA -> PSYCHE | 9.77 | MOON | S+C+X/M |
+| 4 | MASSALIA -> PSYCHE -> NUWA | 9.96 | MOON | S+X/M+C |
+| 5 | PSYCHE -> POLYXO -> ALKESTE | 10.01 | MARS | X/M+C+S |
+| 6 | MASSALIA -> PSYCHE -> CONCORDIA | 10.09 | MOON | S+X/M+C |
+| 7 | NUWA -> PSYCHE -> PARTHENOPE | 10.28 | MARS | C+X/M+S |
+| 8 | HERTHA -> POLANA -> ALKESTE | 10.29 | MOON | X/M+C+S |
+| 9 | MASSALIA -> NUWA -> PSYCHE | 10.29 | MOON | S+C+X/M |
+| 10 | HERTHA -> ALKESTE -> POLYXO | 10.30 | MOON | X/M+S+C |
 
-The delta-V penalty for compositional diversity (S+C+M) over the pure-minimum (C+C+C) is only **1.17 km/s** (14.61 vs 13.44), a modest 8.7% increase that is well worth the scientific return of visiting all three asteroid classes.
+**Key findings:**
+- Gravity assists reduce total dv by ~32% (9.40 vs 13.80 km/s best without)
+- Moon flybys dominate (11/15) — drop launch dv from ~6-7 km/s to 0.4-0.5 km/s
+- Mars flybys in 4/15 — provide free (0 km/s) redirect for different orbital geometry
+- Psyche appears in 8/15 paths — most accessible X/M target
+- Saved as `results_69ast_ga.pkl`
 
-### 7.6 Compute Infrastructure
+Trajectory animations:
+- `Renders/Asteroid_Plots/19_GA_Rank1_MARS_Hertha_Polyxo_Alkeste_2D.gif`
+- `Renders/Asteroid_Plots/20_GA_Rank2_MOON_Virginia_Psyche_Parthenope_2D.gif`
 
-The 50-asteroid optimization was run on **Google Cloud Platform** Compute Engine:
+### 7.6 Science-Priority Results (70% science, 30% dv, gravity assists)
 
-| Parameter | Value |
-|-----------|-------|
-| VM type | e2-standard-4 (4 vCPU, 16 GB RAM) |
-| OS | Debian 12 |
-| Python | 3.11 (Miniconda) |
-| pykep | 2.6 (conda-forge) |
-| Region | us-west1-b |
-| Total wall time | 6.5 minutes |
-| Total cost | ~$0.08 |
+Using the tradeoff table weights (excluding delta-v which the optimizer handles directly):
 
-**Two-level optimization performance:**
+| Component | Weight (renormalized) | Direction |
+|-----------|:---:|-----------|
+| Science potential | 21.4% | Higher = better |
+| Inclination | 21.4% | Lower = better |
+| Radius | 18.6% | Larger = better |
+| Mass | 17.1% | Larger = better |
+| Eccentricity | 10.0% | Lower = better |
+| Rotation period | 7.1% | 6-24h optimal |
+| Semi-major axis | 4.3% | Lower = better |
 
-| Phase | Triplets | Method | Time |
-|-------|----------|--------|------|
-| Coarse screening | 117,600 | 9 canonical Lambert samples per triplet | 4.5 min |
-| Fine optimization | 50 | Full differential_evolution (maxiter=300, polish=True) | 2.0 min |
+Combined objective: `0.3 × delta_v + 0.7 × (30 - science_sum)`. **Run on GCP (e2-custom-12, 12 vCPU) in 6.7 minutes.**
 
-The coarse screening evaluates 9 fixed time-of-flight configurations (3 launch dates x 3 transfer durations) per triplet, each requiring 3 Lambert solves = 27 Lambert solves per triplet. This is ~30x faster than the previous approach (differential evolution with maxiter=30 per triplet) while providing sufficient discrimination to identify the top candidates.
+| Rank | Path (Earth ->) | dV (km/s) | Science | Score | Flyby |
+|------|-----------------|:---:|:---:|:---:|:---:|
+| 1 | **AEGINA [C] -> BEATRIX [X/M] -> VESTA [S]** | **10.8** | **20.1** | **10.14** | **MARS** |
+| 2 | MASSALIA [S] -> PSYCHE [X/M] -> THEMIS [C] | 10.7 | 20.0 | 10.25 | MOON |
+| 3 | MASSALIA [S] -> PSYCHE [X/M] -> CONCORDIA [C] | 10.1 | 19.7 | 10.25 | MOON |
+| 4 | PERAGA [C] -> MASSALIA [S] -> PSYCHE [X/M] | 10.4 | 19.7 | 10.36 | MOON |
+| 5 | MASSALIA [S] -> FORTUNA [C] -> LYDIA [X/M] | 10.8 | 19.8 | 10.37 | MOON |
+| 6 | THEKLA [C] -> PROSERPINA [S] -> BEATRIX [X/M] | 11.3 | 20.0 | 10.37 | MARS |
+| 7 | HERTHA [X/M] -> POLYXO [C] -> ALKESTE [S] | 9.4 | 19.2 | 10.37 | MARS |
+| 8 | URANIA [S] -> AEGINA [C] -> BEATRIX [X/M] | 10.5 | 19.7 | 10.38 | MOON |
+| 9 | AEGINA [C] -> PROSERPINA [S] -> BEATRIX [X/M] | 10.5 | 19.6 | 10.41 | MARS |
+| 10 | URANIA [S] -> THEKLA [C] -> HERTHA [X/M] | 11.3 | 20.0 | 10.42 | MARS |
+
+**Key findings:**
+- Science weighting promotes well-characterized, large asteroids: Vesta (Dawn target), Aegina (Ch-type), Themis (ice detection)
+- Pure dv-winner (Hertha->Polyxo->Alkeste, 9.40 km/s) drops to #7 due to lower science (19.2)
+- More X/M variety: Beatrix (ranks 1,6,8,9), Psyche (2,3,4), Lydia (5), Hertha (7,10)
+- All paths have reasonable dv (9.4-12.0 km/s) — science weighting doesn't sacrifice accessibility
+- Saved as `results_science_priority_v2.pkl`
+
+### 7.7 Comparison Across All Optimization Runs
+
+| Run | Asteroids | Gravity Assist | Science Weight | Best dV | Best Path | File |
+|-----|:---------:|:--------------:|:--------------:|:-------:|-----------|------|
+| Unconstrained | 50 | No | None | 13.07 | Hertha->Lutetia->Harmonia | `results_50ast_full.pkl` |
+| Diverse C+S+M | 50 | No | None | 13.80 | Hertha->Polyxo->Alkeste | `results_diverse_CSM.pkl` |
+| Diverse + GA | 69 | Moon+Mars | None | **9.40** | Hertha->Polyxo->Alkeste (Mars) | `results_69ast_ga.pkl` |
+| Science priority | 69 | Moon+Mars | 70% | 10.8 | Aegina->Beatrix->Vesta (Mars) | `results_science_priority_v2.pkl` |
+
+### 7.8 Compute Infrastructure
+
+All runs used **Google Cloud Platform** Compute Engine with persistent data in GCS bucket `gs://ae105c-asteroid-data`.
+
+| Run | VM Type | Workers | Coarse | Fine | Total | Cost |
+|-----|---------|:-------:|:------:|:----:|:-----:|:----:|
+| 50-ast unconstrained | e2-standard-4 | 1 | 4.5 min | 2 min | 6.5 min | ~$0.02 |
+| 50-ast diverse | e2-standard-8 | 8 | 5 min | 2 min | 7 min | ~$0.04 |
+| 69-ast + GA | e2-standard-8 | 8 | 8 min | 2 min | 10 min | ~$0.04 |
+| 69-ast science | e2-custom-12 | 12 | 5 min | 1.5 min | 6.7 min | ~$0.04 |
+
+Data stored in `gs://ae105c-asteroid-data` (1.29 GB): SPICE kernels, 69 BSPs, tradeoff CSV. VMs pull from bucket in ~30 seconds instead of 10-minute SCP upload.
 
 ---
 
