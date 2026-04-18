@@ -111,14 +111,15 @@ def solve_lambert_best(r1_km, r2_km, tof_days, mu_km3s2, max_revs=2):
     for cw in [False, True]:
         try:
             lp = pk.lambert_problem(
-                r0=list(r1_m), r1=list(r2_m),
-                tof=tof_sec, mu=mu_m3s2,
-                cw=cw, multi_revs=max_revs,
+                [float(x) for x in r1_m], [float(x) for x in r2_m],
+                float(tof_sec), float(mu_m3s2),
+                cw, max_revs,
             )
-            # Iterate over all solutions returned
-            for idx in range(len(lp.v0)):
-                v1 = np.array(lp.v0[idx]) * _M2KM
-                v2 = np.array(lp.v1[idx]) * _M2KM
+            v1_all = lp.get_v1()
+            v2_all = lp.get_v2()
+            for idx in range(len(v1_all)):
+                v1 = np.array(v1_all[idx]) * _M2KM
+                v2 = np.array(v2_all[idx]) * _M2KM
                 cost = np.linalg.norm(v1) + np.linalg.norm(v2)
                 if cost < best_cost:
                     best_cost = cost

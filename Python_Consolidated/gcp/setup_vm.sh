@@ -3,22 +3,22 @@ set -e
 
 echo "=== Setting up asteroid optimization VM ==="
 
-# 1. Pull data from GCS bucket (fast — same region, ~30 sec)
+# Pull data from GCS bucket (public read, ~30 sec)
+# Bucket: gs://ae105c-asteroid-data (allUsers:objectViewer)
 echo "Downloading data from GCS bucket..."
-mkdir -p ~/project/generic_kernels/lsk ~/project/generic_kernels/spk/satellites \
-         ~/project/generic_kernels/spk/planets ~/project/generic_kernels/pck \
-         ~/project/NOTABLE_ASTEROID_BSPs
+cd ~/project
+mkdir -p generic_kernels/lsk generic_kernels/spk/satellites generic_kernels/spk/planets generic_kernels/pck NOTABLE_ASTEROID_BSPs
 
-gsutil -q cp gs://ae105c-asteroid-data/generic_kernels/naif0012.tls ~/project/generic_kernels/lsk/
-gsutil -q cp gs://ae105c-asteroid-data/generic_kernels/jup310.bsp ~/project/generic_kernels/spk/satellites/
-gsutil -q cp gs://ae105c-asteroid-data/generic_kernels/de430.bsp ~/project/generic_kernels/spk/planets/
-gsutil -q cp gs://ae105c-asteroid-data/generic_kernels/gm_de431.tpc ~/project/generic_kernels/pck/
-gsutil -q cp gs://ae105c-asteroid-data/generic_kernels/pck00010.tpc ~/project/generic_kernels/pck/
-gsutil -q -m cp gs://ae105c-asteroid-data/NOTABLE_ASTEROID_BSPs/*.bsp ~/project/NOTABLE_ASTEROID_BSPs/
-gsutil -q cp gs://ae105c-asteroid-data/asteroid_tradeoff.csv ~/project/
-echo "Data downloaded."
+gsutil -q cp gs://ae105c-asteroid-data/generic_kernels/naif0012.tls generic_kernels/lsk/
+gsutil -q cp gs://ae105c-asteroid-data/generic_kernels/jup310.bsp generic_kernels/spk/satellites/
+gsutil -q cp gs://ae105c-asteroid-data/generic_kernels/de430.bsp generic_kernels/spk/planets/
+gsutil -q cp gs://ae105c-asteroid-data/generic_kernels/gm_de431.tpc generic_kernels/pck/
+gsutil -q cp gs://ae105c-asteroid-data/generic_kernels/pck00010.tpc generic_kernels/pck/
+gsutil -q -m rsync gs://ae105c-asteroid-data/NOTABLE_ASTEROID_BSPs/ NOTABLE_ASTEROID_BSPs/
+gsutil -q cp gs://ae105c-asteroid-data/asteroid_tradeoff.csv .
+echo "Data downloaded from GCS."
 
-# 2. Install Miniconda + pykep
+# Install Miniconda + pykep
 if [ ! -d "$HOME/mc3" ]; then
     echo "Installing Miniconda..."
     wget -q https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O /tmp/mc.sh
@@ -42,6 +42,5 @@ $HOME/env311/bin/python -c "import pykep; print('pykep OK')"
 $HOME/env311/bin/python -c "import spiceypy; print('spiceypy OK')"
 ls ~/project/generic_kernels/spk/planets/de430.bsp > /dev/null && echo "kernels OK"
 echo "$(ls ~/project/NOTABLE_ASTEROID_BSPs/*.bsp | wc -l) BSPs OK"
-
 echo ""
 echo "=== Setup complete ==="

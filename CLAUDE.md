@@ -135,10 +135,10 @@ Reads `sbdb_query_results.csv` from JPL SBDB and outputs `asteroid_tradeoff.csv`
 
 ## Current Best Results (saved — do NOT re-run unless asked)
 
-Results are saved as pickle files in `optimal_asteroid_paths/`. Load with:
+Results are saved as pickle files in `optimal_asteroid_paths/pkl/`. Load with:
 ```python
 import pickle
-with open('optimal_asteroid_paths/results_69ast_ga.pkl', 'rb') as f:
+with open('optimal_asteroid_paths/pkl/results_69ast_ga.pkl', 'rb') as f:
     results = pickle.load(f)  # list of (i, j, k, result_dict)
 ```
 
@@ -164,22 +164,26 @@ Science score uses tradeoff table weights (renormalized without dv): 21.4% sci p
 
 | File | Asteroids | Composition | GA | Science | Best |
 |------|:---------:|:-----------:|:--:|:-------:|:----:|
-| `results_69ast_ga.pkl` | 69 | C+S+X/M | Moon+Mars | None | 9.40 km/s |
-| `results_science_priority_v2.pkl` | 69 | C+S+X/M | Moon+Mars | 70% (tradeoff weights) | score 10.14 |
-| `results_diverse_CSM.pkl` | 50 | C+S+X/M | No | None | 13.80 km/s |
-| `results_science_priority.pkl` | 69 | C+S+X/M | Moon+Mars | 70% (old weights) | score 10.05 |
-| `results_diverse_science_weighted.pkl` | 50 | C+S+X/M | No | 50% | 14.61 km/s |
-| `results_50ast_full.pkl` | 50 | Any | No | None | 13.07 km/s |
+| `pkl/results_69ast_ga.pkl` | 69 | C+S+X/M | Moon+Mars | None | 9.40 km/s |
+| `pkl/results_science_priority_v2.pkl` | 69 | C+S+X/M | Moon+Mars | 70% (tradeoff weights) | score 10.14 |
+| `pkl/results_diverse_CSM.pkl` | 50 | C+S+X/M | No | None | 13.80 km/s |
+| `pkl/results_science_priority.pkl` | 69 | C+S+X/M | Moon+Mars | 70% (old weights) | score 10.05 |
+| `pkl/results_diverse_science_weighted.pkl` | 50 | C+S+X/M | No | 50% | 14.61 km/s |
+| `pkl/results_50ast_full.pkl` | 50 | Any | No | None | 13.07 km/s |
 
 ## GCP Compute
 
+**All GCP config is in `Python_Consolidated/gcp/gcp_config.py` — read that file first.**
+
+Key facts:
 - **Project**: `project-8b1249f5-4cb6-4dad-8a9`
-- **Machine**: `e2-custom-12-49152` (12 vCPU — max allowed by quota CPUS_ALL_REGIONS=12)
+- **Machine**: `e2-custom-12-49152` (12 vCPU, max allowed by quota)
 - **Zone**: `us-west1-b`
-- **GCS bucket**: `gs://ae105c-asteroid-data` (kernels + BSPs, ~30 sec pull vs 10 min SCP)
-- **Setup**: Miniconda + Python 3.11 + pykep from conda-forge
-- **Scripts**: `Python_Consolidated/gcp/` (run_optimization.py, run_diverse.py, run_science_priority.py)
+- **GCS bucket**: `gs://ae105c-asteroid-data` (PUBLIC READ — kernels + BSPs stored permanently, ~30 sec pull)
+- **NEVER upload kernels via SCP** — always pull from the GCS bucket
+- **IMPORTANT**: Create VM with `--scopes=storage-ro,default` so it can read the bucket
 - **Auth**: `gcloud auth login` required before each session
+- **Scripts**: `Python_Consolidated/gcp/` (run_optimization.py, run_diverse.py, run_science_priority.py, run_73ast_full.py)
 
 ## Conventions
 

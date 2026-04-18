@@ -18,7 +18,7 @@ import spiceypy
 from scipy.optimize import differential_evolution
 from tqdm import tqdm
 
-from core import (solve_lambert, get_state, get_mu, get_radius,
+from core import (solve_lambert, solve_lambert_best, get_state, get_mu, get_radius,
                   compute_flyby_dv, DAY, YEAR, WEEK, MONTH, MU_SUN,
                   MAX_MISSION_DURATION, unpack_input, unpack_mars_input)
 
@@ -190,10 +190,12 @@ def optimize_mars_times(a_id_1, a_id_2, a_id_3, launch_range, m_1, m_2, m_3, m_m
 
 # Flyby body parameters
 FLYBY_BODIES = {
-    'moon':  {'id': '301', 'mu_body': 4,    'radii_body': 301, 'min_alt': 100,
+    'moon':  {'id': '301', 'mu_body': 301,  'radii_body': 301, 'min_alt': 100,
               'tof_min': 1*DAY, 'tof_max': 10*DAY},     # lunar flyby: 1-10 days after launch
     'mars':  {'id': '4',   'mu_body': 4,    'radii_body': 499, 'min_alt': 200,
               'tof_min': 0.3*YEAR, 'tof_max': 3*YEAR},   # Mars flyby: months to years
+    'earth': {'id': '399', 'mu_body': 399,  'radii_body': 399, 'min_alt': 300,
+              'tof_min': 1.0*YEAR, 'tof_max': 3.0*YEAR},  # EGA loop: 1-3 years
 }
 
 
@@ -222,9 +224,29 @@ def compute_path_with_flyby(a_id_1, a_id_2, a_id_3, et_launch, et_flyby,
     mu_flyby = get_mu(fb['mu_body'])
     safe_radius = get_radius(fb['radii_body']) + fb['min_alt']
 
-    # Leg 0: Earth -> flyby body
-    e_lv, fb_arr_lv, ef0 = solve_lambert(earth_r, flyby_r,
-                                          (et_flyby - et_launch) / DAY, m_0, MU_SUN)
+    # Leg 0: Earth -> flyby body. For Earth-return trajectories the spacecraft must
+    # loop around the Sun on a DIFFERENT heliocentric orbit. Try all Lambert branches
+    # (m=0,±1,±2) and pick the minimum-launch-dv solution that satisfies the v∞ floor
+    # — else we collapse to degenerate "phasing orbit" solutions that coast with Earth
+    # and do all the work at the flyby, which isn't a real gravity assist.
+    if flyby_name == 'earth':
+        MIN_EGA_VINF = 1.5  # km/s; rejects degenerate Earth-co-orbital trajectories
+        best_launch_dv = np.inf
+        e_lv, fb_arr_lv, ef0 = np.zeros(3), np.zeros(3), -1
+        for m_try in (0, 1, -1, 2, -2):
+            V1, V2, ef = solve_lambert(earth_r, flyby_r,
+                                        (et_flyby - et_launch) / DAY, m_try, MU_SUN)
+            if ef != 1:
+                continue
+            ldv = np.linalg.norm(V1 - earth_v)
+            if ldv < MIN_EGA_VINF:
+                continue  # degenerate phasing orbit
+            if ldv < best_launch_dv:
+                best_launch_dv = ldv
+                e_lv, fb_arr_lv, ef0 = V1, V2, 1
+    else:
+        e_lv, fb_arr_lv, ef0 = solve_lambert(earth_r, flyby_r,
+                                              (et_flyby - et_launch) / DAY, m_0, MU_SUN)
     # Leg 1: flyby body -> A1
     fb_dep_lv, a1_arr_lv, ef1 = solve_lambert(flyby_r, a1_arr_r,
                                                (et_arrive_1 - et_flyby) / DAY, m_1, MU_SUN)
@@ -315,6 +337,8 @@ def optimize_times_flyby_quick(a_id_1, a_id_2, a_id_3, launch_range, flyby_name)
         # Flyby timing depends on body
         if flyby_name == 'moon':
             flyby_tofs = [3*DAY/YEAR, 5*DAY/YEAR]  # 3-5 days for lunar flyby
+        elif flyby_name == 'earth':
+            flyby_tofs = [1.1, 1.5, 2.0]           # 1-2 yr EGA return loop
         else:
             flyby_tofs = [0.6, 1.2]  # 0.6-1.2 years for Mars flyby
         for fb_tof in flyby_tofs:
@@ -347,6 +371,8 @@ def optimize_best_architecture(a_id_1, a_id_2, a_id_3, launch_range,
                                                       launch_range, 'moon')
         results['mars'] = optimize_times_flyby_quick(a_id_1, a_id_2, a_id_3,
                                                       launch_range, 'mars')
+        results['earth'] = optimize_times_flyby_quick(a_id_1, a_id_2, a_id_3,
+                                                       launch_range, 'earth')
         # Return best dv
         best_arch = min(results, key=results.get)
         return results[best_arch], best_arch
@@ -356,7 +382,7 @@ def optimize_best_architecture(a_id_1, a_id_2, a_id_3, launch_range,
         direct['architecture'] = 'direct'
         results['direct'] = direct
 
-        for fb_name in ['moon', 'mars']:
+        for fb_name in ['moon', 'mars', 'earth']:
             try:
                 fb_result = optimize_times_flyby(a_id_1, a_id_2, a_id_3,
                                                  launch_range, fb_name, 0, m_1, m_2, m_3)
@@ -567,7 +593,7 @@ def two_level_optimize(asteroid_list, m_1, m_2, m_3,
     # Pass 2: fine — full optimization with best architecture for each
     print(f"\nPass 2: Fine optimization on top {len(top)} candidates...")
     print(f"  Architectures in top {len(top)}: "
-          + str({a: sum(1 for t in top if t[4]==a) for a in ['direct','moon','mars']}))
+          + str({a: sum(1 for t in top if t[4]==a) for a in ['direct','moon','mars','earth']}))
 
     results = []
     for i, j, k, _, coarse_arch in tqdm(top, desc="Fine"):

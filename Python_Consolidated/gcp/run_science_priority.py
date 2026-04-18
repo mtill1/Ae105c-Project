@@ -43,9 +43,18 @@ def _eval_coarse(args):
                 if dv < dv_mars:
                     dv_mars = dv
 
-    best_dv = min(dv_direct, dv_mars)
-    best_arch = 'direct' if dv_direct <= dv_mars else 'mars'
-    return (i, j, k, best_dv, best_arch)
+    dv_earth = 1e3
+    for lf in [0.1, 0.4, 0.7]:
+        for et_tof in [1.2, 1.8, 2.5]:
+            for tof in [2.0, 3.5]:
+                x = np.array([lf*(launch_dates[1]-launch_dates[0])/YEAR, et_tof, tof, 0.4, tof, 0.4, tof])
+                dv = score_paths_flyby(x, a1_id, a2_id, a3_id, launch_dates, 'earth', 0, 0, 0, 0)
+                if dv < dv_earth:
+                    dv_earth = dv
+
+    candidates = {'direct': dv_direct, 'mars': dv_mars, 'earth': dv_earth}
+    best_arch = min(candidates, key=candidates.get)
+    return (i, j, k, candidates[best_arch], best_arch)
 
 
 def _eval_fine(args):

@@ -26,7 +26,7 @@ def _init_worker():
 
 
 def _eval_coarse(args):
-    """Coarse: try direct + Mars flyby, return best."""
+    """Coarse: try direct + Mars flyby + Earth flyby, return best."""
     i, j, k, a1_id, a2_id, a3_id, launch_dates = args
     from optimization import optimize_times_quick, score_paths_flyby
     from core import YEAR
@@ -42,9 +42,18 @@ def _eval_coarse(args):
                 if dv < dv_mars:
                     dv_mars = dv
 
-    best_dv = min(dv_direct, dv_mars)
-    best_arch = 'direct' if dv_direct <= dv_mars else 'mars'
-    return (i, j, k, best_dv, best_arch)
+    dv_earth = 1e3
+    for lf in [0.1, 0.4, 0.7]:
+        for et_tof in [1.2, 1.8, 2.5]:       # Earth-return loop TOF (years)
+            for tof in [2.0, 3.5]:
+                x = np.array([lf*(launch_dates[1]-launch_dates[0])/YEAR, et_tof, tof, 0.4, tof, 0.4, tof])
+                dv = score_paths_flyby(x, a1_id, a2_id, a3_id, launch_dates, 'earth', 0, 0, 0, 0)
+                if dv < dv_earth:
+                    dv_earth = dv
+
+    candidates = {'direct': dv_direct, 'mars': dv_mars, 'earth': dv_earth}
+    best_arch = min(candidates, key=candidates.get)
+    return (i, j, k, candidates[best_arch], best_arch)
 
 
 def _eval_fine(args):
@@ -102,7 +111,7 @@ if __name__ == '__main__':
 
     print(f"\nDiverse triplets: {len(tasks):,}")
     print(f"Workers: {N_WORKERS}")
-    print(f"Architecture: direct + Mars flyby (coarse), all 3 (fine)")
+    print(f"Architecture: direct + Mars + Earth flyby (coarse), all 4 (fine)")
     print()
 
     t_start = time.time()
