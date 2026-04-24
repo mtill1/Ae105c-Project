@@ -1,0 +1,18 @@
+%% The Main Entry Point Into Asteroid Orbiter
+% Essentially this establishes the CLI tool
+clc;
+
+fprintf("Loading Kernel Data From kernel_data.mat\n");
+load("kernel_data.mat");
+
+fprintf("Generic Kernel Path: %s\n Mice Path: %s\n" + ...
+    "Is this correct? (y/n):", ...
+    path_to_generic_kernels, path_to_mice);
+
+usr_in = input();
+
+if usr_in ~= 'y' && usr_in ~= 'Y'
+    path_to_generic_kernels = convertStringsToChars(input("Paste the Generic Kernel Path:"));
+    error("Exiting Asteroid Orbiter. Please ")
+end
+load_kernels("bsp_files");
