@@ -92,11 +92,16 @@ switch mode_select
 
         fprintf("\n\nCleaning up...\n");
         clear aster_id t_0_str t_f_str et_0 et_f initial_conditions i mode_select path_to_generic_kernels path_to_mice usr_in;
-        %cspice_kclear;
+        
         fprintf("Cleanup successful.\n");
+
     case 2
-        fprintf("\n\nPlotting selected. Plotting imported data.\n");
-        plot_orbit(t_sol, orbit_sol, , 50, 50, 50);
+        if exist('t_sol') && exist('orbit_sol')
+            fprintf("\n\nPlotting selected. Plotting imported data.\n");
+            plot_orbit(t_sol, orbit_sol, 570/2, 550/2, 446/2, 50);
+        else
+            fprintf("No simulation data available. Please run a simulation first or import data.\n");
+        end
     case 3
         % Optimize for Parameters
         optimizeParameters();
@@ -106,4 +111,5 @@ switch mode_select
 end
 
 
+cspice_kclear;
 
