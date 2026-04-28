@@ -9,36 +9,33 @@ import numpy as np
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-from matplotlib.animation import FuncAnimation, FFMpegWriter
+from matplotlib.animation import FuncAnimation, PillowWriter
 from matplotlib.patches import Circle
-import imageio_ffmpeg
-matplotlib.rcParams['animation.ffmpeg_path'] = imageio_ffmpeg.get_ffmpeg_exe()
 import spiceypy
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from core import load_kernels, solve_lambert, get_state, get_mu, get_radius, MU_SUN, DAY, YEAR
+from core import (load_kernels, solve_lambert, two_body_sim, get_state,
+                  get_mu, get_radius, MU_SUN, DAY, YEAR)
 
 R_E = 6378.137
 
 
-def _best_lambert_min_launch(r0, v0, r1, tof_days, max_m=2):
-    best = (None, None, np.inf)
-    for m in range(-max_m, max_m + 1):
-        V1, V2, ef = solve_lambert(r0, r1, tof_days, m, MU_SUN)
-        if ef == 1:
-            ldv = np.linalg.norm(V1 - v0)
-            if ldv < best[2]:
-                best = (V1, V2, ldv)
-    return best[0], best[1]
-
-
 def reconstruct_flyby_velocities(res, a_id_1):
+    """v_in and v_out relative to Earth at the flyby epoch.
+
+    Uses the stored delta_v_launch vector to forward-propagate — avoids the
+    Lambert branch-selection ambiguity that would otherwise let this script
+    show a degenerate near-zero-v∞ trajectory different from the optimizer's.
+    """
     et_l, et_fb, et_a1 = res['et_launch'], res['et_flyby'], res['et_arrive_1']
     r_e_l, v_e_l = get_state('399', et_l)
     r_e_f, v_e_f = get_state('399', et_fb)
     r_a1, _      = get_state(a_id_1, et_a1)
 
-    _, v_arr_e = _best_lambert_min_launch(r_e_l, v_e_l, r_e_f, (et_fb - et_l) / DAY)
+    # Forward-propagate the optimizer's exact trajectory to get arrival velocity
+    v_dep = v_e_l + np.asarray(res['delta_v_launch'])
+    X, _ = two_body_sim(et_fb - et_l, np.concatenate([r_e_l, v_dep]), MU_SUN, n_steps=50)
+    v_arr_e = X[-1, 3:6]
     v_in_rel = v_arr_e - v_e_f
 
     v_dep_e, _, _ = solve_lambert(r_e_f, r_a1, (et_a1 - et_fb) / DAY, 0, MU_SUN)
@@ -174,9 +171,7 @@ def make_video(res, names, ids, out_path, fps=30, duration_s=30):
 
     anim = FuncAnimation(fig, update, frames=n_frames, init_func=init,
                          interval=1000 / fps, blit=True)
-    writer = FFMpegWriter(fps=fps, codec='libx264',
-                          bitrate=4000, extra_args=['-pix_fmt', 'yuv420p'])
-    anim.save(out_path, writer=writer, dpi=130)
+    anim.save(out_path, writer=PillowWriter(fps=fps), dpi=90)
     plt.close(fig)
     print(f"Saved: {out_path}")
 
@@ -186,16 +181,13 @@ def main():
     ast = load_kernels(os.path.join(repo, "NOTABLE_ASTEROID_BSPs"),
                        "/Users/rebnoob/Documents/ae105/generic_kernels")
 
-    with open(os.path.join(repo, "optimal_asteroid_paths/pkl/results_69ast_ega_v2.pkl"), 'rb') as f:
+    with open(os.path.join(repo, "optimal_asteroid_paths/pkl/demo_real_ega.pkl"), 'rb') as f:
         results = pickle.load(f)
-
-    for rank, (i, j, k, res) in enumerate(results[:15], 1):
-        if res.get('architecture') == 'earth':
-            names = [ast[x]['NAME'] for x in (i, j, k)]
-            ids   = [str(int(ast[x]['ID'])) for x in (i, j, k)]
-            out = os.path.join(repo, "Renders/Asteroid_Plots/earth_flyby_zoom.mp4")
-            make_video(res, names, ids, out, fps=30, duration_s=30)
-            break
+    i, j, k, res = results[0]
+    names = [ast[x]['NAME'] for x in (i, j, k)]
+    ids   = [str(int(ast[x]['ID'])) for x in (i, j, k)]
+    out = os.path.join(repo, "Renders/Asteroid_Plots/earth_flyby_zoom_real.gif")
+    make_video(res, names, ids, out, fps=30, duration_s=30)
 
 
 if __name__ == '__main__':

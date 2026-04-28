@@ -1,5 +1,8 @@
 # Earth Gravity Assist — Implementation Plan
 
+> **New to this project?** Read [`README.md`](README.md) first — it has step-by-step setup and run instructions for someone with no Python experience.
+> This document is the technical implementation spec for the Earth-GA architecture.
+
 Quick-win extension before tackling low-thrust. Adds Earth flyby as a 4th architecture alongside direct / Moon GA / Mars GA.
 
 ## What an Earth GA looks like

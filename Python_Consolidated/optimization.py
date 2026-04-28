@@ -224,13 +224,12 @@ def compute_path_with_flyby(a_id_1, a_id_2, a_id_3, et_launch, et_flyby,
     mu_flyby = get_mu(fb['mu_body'])
     safe_radius = get_radius(fb['radii_body']) + fb['min_alt']
 
-    # Leg 0: Earth -> flyby body. For Earth-return trajectories the spacecraft must
-    # loop around the Sun on a DIFFERENT heliocentric orbit. Try all Lambert branches
-    # (m=0,±1,±2) and pick the minimum-launch-dv solution that satisfies the v∞ floor
-    # — else we collapse to degenerate "phasing orbit" solutions that coast with Earth
-    # and do all the work at the flyby, which isn't a real gravity assist.
+    # Leg 0: Earth -> flyby body. For a REAL Earth gravity assist the spacecraft
+    # must (a) fly a visibly different heliocentric orbit (v∞ >= 3 km/s, else it
+    # co-orbits with Earth) and (b) get most of the turning from Earth's gravity
+    # rather than a burn (powered Δv at periapsis kept small — enforced later).
     if flyby_name == 'earth':
-        MIN_EGA_VINF = 1.5  # km/s; rejects degenerate Earth-co-orbital trajectories
+        MIN_EGA_VINF = 3.0  # km/s — matches real-mission heritage (Dawn, MESSENGER, Galileo)
         best_launch_dv = np.inf
         e_lv, fb_arr_lv, ef0 = np.zeros(3), np.zeros(3), -1
         for m_try in (0, 1, -1, 2, -2):
@@ -268,6 +267,12 @@ def compute_path_with_flyby(a_id_1, a_id_2, a_id_3, et_launch, et_flyby,
     dv_A2_arr = a2_arr_lv - a2_arr_v
     dv_A2_lv = a2_lv_lv - a2_lv_v
     dv_A3_arr = a3_arr_lv - a3_arr_v
+
+    # For Earth GA: reject if the flyby isn't almost entirely gravity-driven.
+    # A real GA has powered Δv ~0; we allow 0.3 km/s for numerical slack.
+    if flyby_name == 'earth' and abs(dv_flyby) > 0.3:
+        return {'delta_v_total': 1e3, 'delta_v_launch': np.array([]),
+                'architecture': flyby_name}
 
     dv_total = (np.linalg.norm(dv_launch) + abs(dv_flyby)
                 + np.linalg.norm(dv_A1_arr) + np.linalg.norm(dv_A1_lv)

@@ -1,5 +1,8 @@
 # Low-Thrust & Earth-Gravity-Assist Extension Plan
 
+> **New to this project?** Read [`README.md`](README.md) first — it has step-by-step setup and run instructions for someone with no Python experience.
+> This document is the technical extension spec for the low-thrust framework.
+
 **Status**: research complete, implementation pending. Target: reduce *propellant mass fraction* (not necessarily Δv) for the Earth → [flyby] → A1 → A2 → A3 mission.
 
 Current best (impulsive, Mars GA): **9.40 km/s Δv**, Mars flyby, ~5-10 yr mission. At bipropellant Isp ≈ 320 s this implies a **~95% propellant mass fraction** (essentially impossible to launch).
@@ -198,28 +201,98 @@ Pickle format unchanged: `results.pkl = [(i, j, k, result_dict), ...]`.
 
 ---
 
-## 7. Parallelization strategy (GCP)
+## 7. Hybrid architecture — per-leg propulsion choice
 
-Low-thrust per-triplet optimization is **seconds-to-minutes**, not milliseconds. 14,040 triplets × 30 s = 117 CPU-hrs. Doesn't fit the existing single-VM workflow directly.
+**Key insight**: low-thrust and chemical each dominate in different regimes, so the globally optimal mission is probably a *mix*: chemical for launch + gravity assist, electric for long belt-to-belt cruises. This matches flight heritage — Dawn, Hayabusa2, Psyche all use hybrid architectures.
 
-### Proposed 3-stage pipeline
+### 7.1 Per-leg regime analysis
 
-| Stage | Method | Triplets | Cost |
-|---|---|---|---|
-| **1. Coarse** | Lambert + flyby quick (existing) | 14,040 | ~8 min (current) |
-| **2. Medium** | Lambert fine + **all 4 architectures** (direct, Moon, Mars, EGA) | top 200 | ~20 min |
-| **3. Fine LT** | `mga_lt_nep` + MBH, 30 s/triplet, 12 parallel | top 30 | ~75 min |
+| Leg | Typical requirements | Natural fit |
+|---|---|---|
+| L1: Earth → GA body | Fixed launch window, big Δv fast | **Chemical** (launch vehicle + Oberth at periapsis) |
+| L2: GA body → A1 | Tied to the GA window timing | Usually chemical |
+| L3: A1 → A2 | Heliocentric cruise, flexible TOF | **Electric** candidate |
+| L4: A2 → A3 | Heliocentric cruise, flexible TOF | **Electric** candidate |
 
-**Total**: ~1.5 hr on current 12-vCPU VM, ~$0.60.
+So the real architecture decision is just legs 3 and 4 → 4 variants: `CC`, `CE`, `EC`, `EE`. This keeps the search space tractable.
 
-Quota bump later (to ~64 vCPU) would drop stage 3 to ~15 min.
+### 7.2 Pair-closeness pre-screen (avoid wasted LT compute)
 
-### Initial-guess chain
-For each stage-3 triplet, seed the `mga_lt_nep` decision vector from the stage-2 impulsive solution: per-leg Δv magnitudes / `n_seg` become segment throttles, times transfer directly. This converges MBH reliably.
+Not every asteroid pair benefits from low-thrust. LT helps only when:
+- **Δv demand is moderate** (~1-5 km/s). Below, chemical is already cheap. Above, the 14-yr cap punishes the long TOF LT needs to deliver.
+- **Time is available** (typically ≥ 1 yr per leg for LT to reach break-even on mass).
+
+We already have the impulsive Δv and TOF for every pair from the existing Lambert search. So the screen is:
+
+```python
+def lt_eligible(leg_impulsive_dv, leg_tof_yr):
+    return leg_impulsive_dv < 5.0 and leg_tof_yr >= 1.0
+```
+
+Only pairs passing this get a full LT optimization. Typical hit rate: 20-40% of the top-30 triplets' legs.
+
+### 7.3 Unified objective: final mass (not Δv)
+
+Δv does not add up when Isp varies. **Use Tsiolkovsky per leg, then multiply mass fractions across the mission.** Equivalent objective to minimize:
+
+```
+J  =  Σ_i  Δv_i  /  Isp_i
+```
+
+Here `Isp_i ∈ {Isp_chem, Isp_electric}` depending on which propulsion is used for that leg. Minimizing J maximizes final delivered mass `m_final = m_launch · exp(-J · g0)`.
+
+Result-dict should carry `Isp_per_leg` and `dv_per_leg` so the objective is reproducible downstream.
+
+### 7.4 Decision rule per triplet
+
+For each of the top-30 impulsive triplets:
+
+```
+for arch in [CC, CE, EC, EE]:
+    for leg ∈ {L3, L4}:
+        if arch says E for this leg AND lt_eligible(leg):
+            optimize_leg_lt(leg, seeded_from_impulsive)   # pykep mga_lt_nep-style
+        else:
+            use_impulsive_leg(leg)
+    compute_J(arch)
+keep arch with minimum J
+```
+
+If LT optimization fails (infeasible, didn't converge), fall back to chemical for that leg. Never let a failed LT solve dominate an otherwise-good architecture.
 
 ---
 
-## 8. Spacecraft parameters (reasonable defaults)
+## 8. Parallelization & pipeline (updated)
+
+Low-thrust per-leg optimization is **~30 s**, not milliseconds. Running LT on every pair in every triplet is 14,040 × ≥2 legs × 30 s = 230+ CPU-hrs. Prohibitive. The pair-screen + top-N filter keeps it fast.
+
+### 8.1 Four-stage pipeline
+
+| Stage | Method | Work unit | Cost on 12 vCPU |
+|---|---|---|---|
+| **1. Coarse** | Lambert + flyby quick screen (existing) | 14,040 triplets × 4 archs | ~8 min |
+| **2. Fine impulsive** | `differential_evolution` (existing) | top-50 triplets × 4 archs | ~5 min |
+| **3. LT pair-screen** | Flag eligible legs in top-30 | ~60 legs (metadata only) | seconds |
+| **4. LT refinement** | `sims_flanagan.leg` + MBH per eligible leg; score 4 archs per triplet | ~60 LT solves + 30 × 4 arch evals | ~40 min |
+
+**Total**: ~55 min on current 12-vCPU VM, ~$0.40.
+
+### 8.2 Initial-guess chain
+For each LT leg, seed the decision vector from the impulsive Lambert result:
+- `et_depart`, `et_arrive`: carry through unchanged
+- `m_initial`: the ending mass from the prior leg (chain through)
+- `throttles[0..N]`: initialize as `(Δv_lambert / N) * u_lambert` where `u_lambert` is the unit vector of the impulsive Δv. Direction is roughly correct; magnitude normalized to segment count.
+- `match_point`: mid-leg.
+
+This seed is almost always inside MBH's convergence basin. Empirically ~80% first-try success rate.
+
+### 8.3 Parallelization
+- Stage 1, 2: already parallelized across triplets via `multiprocessing.Pool`.
+- Stage 4: parallelize LT leg solves across the 12 vCPUs. Each leg is independent.
+
+---
+
+## 9. Spacecraft parameters (reasonable defaults)
 
 From Dawn heritage:
 
@@ -236,7 +309,21 @@ From Dawn heritage:
 
 ---
 
-## 9. Reading list
+### 9.1 Per-leg Isp assignment (for the hybrid objective)
+
+| Leg | Propulsion | Isp used in objective |
+|---|---|---|
+| L1 (Earth launch + possible dep. burn) | Chemical | **320 s** (bipropellant) |
+| L1 periapsis GA burn | Chemical | **320 s** |
+| L2 (GA → A1) | Chemical by default | **320 s** |
+| L3 (A1 → A2) | **Decided per triplet: C or E** | 320 s OR 3100 s |
+| L4 (A2 → A3) | **Decided per triplet: C or E** | 320 s OR 3100 s |
+
+Propellant mass per leg: `m_prop_i = m_start_i · (1 - exp(-Δv_i / (Isp_i · g0)))`. Chained through the mission to get final delivered dry mass.
+
+---
+
+## 10. Reading list
 
 - **Sims & Flanagan (1999)**, *Preliminary Design of Low-Thrust Interplanetary Missions*, AAS 99-338. The original direct-transcription paper.
 - **Petropoulos & Longuski (2004)**, *J. Spacecraft & Rockets* 41(5) — shape-based algorithm (useful context even if we skip it).
@@ -248,7 +335,7 @@ From Dawn heritage:
 
 ---
 
-## 10. Risks / gotchas
+## 11. Risks / gotchas
 
 - **No Python 3.13 wheel for pykep**: pin GCP VM to 3.12. Current `env311` already handles this.
 - **pygmo dependency**: `conda install -c conda-forge pygmo` alongside pykep. SNOPT7 is licensed — use `nlopt("slsqp")` or IPOPT.
@@ -261,12 +348,13 @@ From Dawn heritage:
 
 ---
 
-## 11. Implementation milestones
+## 12. Implementation milestones
 
-1. **Add Earth to `FLYBY_BODIES`** and re-run existing impulsive optimizer with all 4 architectures (direct / Moon / Mars / Earth). Quick win, tests the plumbing, sets a new impulsive baseline including EGA. **~30 min of work.**
-2. **Smoke test pykep low-thrust** in isolation: reproduce `_ex3.py` Earth→Venus→Mercury on a local env. Verify pygmo + pykep + SPICE bridge work end-to-end. **~1 day.**
-3. **Build `lowthrust.py`**: wrap `mga_lt_nep` for our Earth → [optional GAs] → A1 → A2 → A3 chain. Smoke-test on one known triplet (e.g., the current dv-min winner Hertha → Polyxo → Alkeste). **~2 days.**
-4. **Integrate with stage-3 of the pipeline** on GCP. Seed from impulsive solution. Verify parallelization. **~1 day.**
-5. **Run full 3-stage pipeline** across 14,040 triplets. Compare final-mass ranking to impulsive ranking. Produce trade-study table. **~2 hrs compute, 1 day analysis.**
+1. **[done]** Earth GA added, physically realistic constraints applied. Result: no real EGAs in top-50; Mars GA dominates. Baseline ≈ 9.40 km/s, ~11-yr mission.
+2. **Smoke-test pykep low-thrust** in isolation on a local env. Verify `pygmo` + `pykep.sims_flanagan.leg` + SPICE bridge work end-to-end on a single Earth→Mars leg. **~1 day.**
+3. **Build `lowthrust.py` with a single-leg API**: `optimize_lt_leg(r0, v0, t0, r1, t1, m0, thrust, Isp)` returning `(m_final, dv_integral, throttle_profile, converged)`. Seeded from Lambert. **~2 days.**
+4. **Hybrid scoring wrapper**: `evaluate_hybrid_architecture(triplet, arch ∈ {CC, CE, EC, EE})` returning final mass. Pair-screen filter (`lt_eligible`) applied before calling LT solver. **~1 day.**
+5. **Stage 4 on GCP**: re-run the existing pipeline with the new hybrid refinement stage. Compare final-mass ranking to all-impulsive ranking. Produce trade-study table showing: best-impulsive mass, best-hybrid mass, mass savings %, winning architecture per top triplet. **~1 hr compute, 1 day analysis.**
+6. **(Stretch)** Expand hybrid space to include L2 (GA→A1) as E-eligible, or allow deep-space maneuvers (DSMs) to enable real ΔV-EGA trajectories. Out of scope for v1.
 
-Total: **~1 week for a working low-thrust + EGA pipeline**, ~$2 in GCP spend.
+Total: **~1 week for a working hybrid impulsive+LT pipeline**, ~$1 in GCP spend.

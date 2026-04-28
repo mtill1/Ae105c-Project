@@ -1,5 +1,8 @@
 # Asteroid Selection & Trajectory Optimization Methodology
 
+> **New to this project?** Read [`README.md`](README.md) first — it has step-by-step setup and run instructions for someone with no Python experience.
+> This document explains the algorithms in detail.
+
 ## Table of Contents
 
 1. [Overview](#1-overview)

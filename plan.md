@@ -1,5 +1,8 @@
 # Mission Design Plan: Three-Asteroid Main Belt Rendezvous
 
+> **New to this project?** Read [`README.md`](README.md) first — it has step-by-step setup and run instructions for someone with no Python experience.
+> This document is the deep technical design spec.
+
 ## Table of Contents
 
 1. [Mission Statement and Requirements](#1-mission-statement-and-requirements)
