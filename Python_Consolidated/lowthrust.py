@@ -53,7 +53,7 @@ def _forward_propagate(r0, v0, m0, throttles, tof_sec, thrust_N, isp_s, nseg):
     r, v, m = np.asarray(r0, float), np.asarray(v0, float), float(m0)
     dv_total = 0.0
     for i in range(nseg):
-        u = np.asarray(throttles[3 * i: 3 * i + 3])  # unit vector in [-1,1]^3
+        u = np.asarray(throttles[3 * i: 3 * i + 3])
         # Half-coast
         r, v = _propagate_km(r, v, dt / 2)
         # Impulse: δv_max = T·dt / m  (converted to km/s)
@@ -95,7 +95,8 @@ def _seed_from_lambert(r0, v0, r1, v1, tof_sec, nseg):
 
 def optimize_lt_leg(r0_km, v0_kms, r1_km, v1_kms, tof_sec,
                     m_init_kg=DEFAULT_M_INIT_KG, thrust_N=DEFAULT_THRUST_N,
-                    isp_s=ISP_ELEC, nseg=DEFAULT_NSEG, verbose=False):
+                    isp_s=ISP_ELEC, nseg=DEFAULT_NSEG, verbose=False,
+                    max_nfev=1500, reg_weight=0.05):
     """Optimize a low-thrust leg.
 
     Parameters
@@ -126,17 +127,26 @@ def optimize_lt_leg(r0_km, v0_kms, r1_km, v1_kms, tof_sec,
                                            tof_sec, thrust_N, isp_s, nseg)
         pos_err = (rf - r1) / 1e6        # scale to ~O(1): 1e6 km ≈ 0.007 AU
         vel_err = (vf - v1) * 10          # 1 km/s ≈ 10 units → comparable weight
-        # Regularization: small cost on total throttle magnitude
-        reg = 0.01 * throttles
-        return np.concatenate([pos_err, vel_err, reg])
+        # Regularization: penalize throttle magnitude to prefer fuel-optimal solns.
+        # Weight scaled relative to mismatch residuals (which are O(1) at error
+        # boundaries 1e6 km / 0.1 km/s).  Too weak -> over-throttling.
+        reg = reg_weight * throttles
+        # Hard cap: physical engine can't exceed thrust_N.  Solver bounds are a
+        # cube [-1,1]^3 but the engine constraint is |u| <= 1 (unit ball).
+        # Add a one-sided smooth penalty that activates when |u_i| > 1 per segment.
+        u_vecs = throttles.reshape(-1, 3)
+        u_mags = np.linalg.norm(u_vecs, axis=1)
+        over   = np.maximum(0.0, u_mags - 1.0)  # 0 if feasible, else excess
+        thrust_pen = 50.0 * over  # weight large enough to dominate when over-budget
+        return np.concatenate([pos_err, vel_err, reg, thrust_pen])
 
     seed = _seed_from_lambert(r0, v0, r1, v1, tof_sec, nseg)
     bounds = (-np.ones(3 * nseg), np.ones(3 * nseg))
 
     try:
         res = least_squares(residuals, seed, bounds=bounds,
-                            method='trf', max_nfev=200,
-                            xtol=1e-5, ftol=1e-5, verbose=0)
+                            method='trf', max_nfev=max_nfev,
+                            xtol=1e-7, ftol=1e-7, verbose=0)
     except Exception as e:
         return {'converged': False, 'reason': f'solver_exception: {e}',
                 'm_final': 0.0, 'dv_integral_kms': np.inf}

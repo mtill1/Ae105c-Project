@@ -195,6 +195,31 @@ def compute_flyby_dv(v_sc_in_km_s, v_sc_out_km_s, v_planet_km_s,
     mu_m3s2 = mu_planet_km3s2 * 1e9
     safe_r_m = safe_radius_km * _KM2M
 
+    # Geometric feasibility check: pk.fb_dv only equalizes v_inf magnitudes;
+    # it does NOT verify that the required turn angle is achievable at the
+    # safe periapsis. If the turn exceeds gravity's natural maximum, no amount
+    # of periapsis Δv can fix it (a radial burn at periapsis adjusts speed,
+    # not bending direction). Reject as infeasible by returning a penalty.
+    #
+    # For a powered flyby with possibly different |v_inf_in| vs |v_inf_out|,
+    # the maximum total turn at periapsis radius r_p is the sum of the two
+    # incoming/outgoing half-turns (each computed independently at its own
+    # |v_inf|):
+    #   δ_max(r_p) = arcsin(1/(1 + r_p · v_in²/μ)) + arcsin(1/(1 + r_p · v_out²/μ))
+    # Smaller r_p gives larger δ_max, so check at the safe (minimum) r_p.
+    v_in_mag  = np.linalg.norm(v_rel_in)
+    v_out_mag = np.linalg.norm(v_rel_out)
+    if v_in_mag > 1e-10 and v_out_mag > 1e-10:
+        cosd = np.clip(np.dot(v_rel_in, v_rel_out) / (v_in_mag * v_out_mag), -1, 1)
+        delta_required = np.arccos(cosd)
+        sin_in_max  = min(1.0, 1.0 / (1.0 + safe_r_m * v_in_mag**2  / mu_m3s2))
+        sin_out_max = min(1.0, 1.0 / (1.0 + safe_r_m * v_out_mag**2 / mu_m3s2))
+        delta_max = np.arcsin(sin_in_max) + np.arcsin(sin_out_max)
+        if delta_required > delta_max + 1e-6:
+            # Geometrically impossible at the safe altitude. Return a Δv
+            # penalty that will dominate any optimizer's score function.
+            return 1e3  # km/s — unreachable
+
     # Try pykep fb_dv first, fall back to manual calculation
     if hasattr(pk, 'fb_dv'):
         dv_ms = pk.fb_dv(list(v_rel_in), list(v_rel_out), mu_m3s2, safe_r_m)
@@ -214,6 +239,94 @@ def compute_flyby_dv(v_sc_in_km_s, v_sc_out_km_s, v_planet_km_s,
         v_p_out = np.sqrt(v_out_mag**2 + 2 * mu_m3s2 / safe_r_m)
         dv_ms = abs(v_p_out - v_p_in)
     return dv_ms * _M2KM
+
+
+# =============================================================================
+# FLYBY GEOMETRY AUDIT (post-hoc verification)
+# =============================================================================
+
+def audit_flyby_geometry(et_launch, et_flyby, et_arr_a1, a1_id, arch):
+    """Independent geometric audit of a Mars/Moon gravity assist.
+
+    Re-derives v_inf vectors from a fresh Lambert solve, then checks whether
+    the required total turn angle is achievable at the safe periapsis altitude.
+    For asymmetric (powered) flybys |v_inf_in| ≠ |v_inf_out|, the maximum total
+    turn is the sum of two half-turns, each computed at its own |v_inf|:
+        δ_max = arcsin(1/(1 + r_p · v_in²/μ)) + arcsin(1/(1 + r_p · v_out²/μ))
+
+    Parameters
+    ----------
+    et_launch, et_flyby, et_arr_a1 : float — SPICE epochs (seconds past J2000)
+    a1_id : str — SPICE ID for the first asteroid after the flyby
+    arch  : str — 'moon' or 'mars'
+
+    Returns
+    -------
+    dict with keys:
+        feasible        : bool
+        v_inf_in_kms,  v_inf_out_kms        : magnitudes (km/s)
+        v_inf_in_vec,  v_inf_out_vec        : 3-vectors (lists)
+        turn_angle_deg                       : required total turn
+        turn_max_deg                         : maximum gravity-only turn at safe r_p
+        periapsis_alt_km                     : altitude implied by the geometry
+        safe_periapsis_alt_km                : the project's minimum (200 km Mars, 100 km Moon)
+        body_radius_km                       : surface radius of the flyby body
+        energy_residual_kms                  : |v_inf_in| − |v_inf_out|
+    """
+    from optimization import FLYBY_BODIES   # avoid circular import at module load
+    fb = FLYBY_BODIES[arch]
+    fb_id = fb['id']
+
+    earth_r, _    = get_state('399', et_launch)
+    fb_r,  fb_v   = get_state(fb_id, et_flyby)
+    a1_r,  _      = get_state(a1_id, et_arr_a1)
+
+    _, V2_in,  ef0 = solve_lambert(earth_r, fb_r, (et_flyby - et_launch)/DAY, 0, MU_SUN)
+    V1_out, _, ef1 = solve_lambert(fb_r,    a1_r, (et_arr_a1- et_flyby )/DAY, 0, MU_SUN)
+    if ef0 != 1 or ef1 != 1:
+        return {'feasible': False, 'reason': 'lambert_fail'}
+
+    v_inf_in  = V2_in  - fb_v
+    v_inf_out = V1_out - fb_v
+    vin_mag   = float(np.linalg.norm(v_inf_in))
+    vout_mag  = float(np.linalg.norm(v_inf_out))
+    cosd      = np.clip(np.dot(v_inf_in, v_inf_out)/(vin_mag*vout_mag), -1, 1)
+    delta     = float(np.degrees(np.arccos(cosd)))
+
+    mu_km3s2  = get_mu(fb['mu_body'])
+    R_km      = get_radius(fb['radii_body'])
+    safe_r_km = R_km + fb['min_alt']
+
+    sin_in_half  = min(1.0, 1.0/(1.0 + safe_r_km * vin_mag**2  / mu_km3s2))
+    sin_out_half = min(1.0, 1.0/(1.0 + safe_r_km * vout_mag**2 / mu_km3s2))
+    delta_max_deg = float(np.degrees(np.arcsin(sin_in_half) + np.arcsin(sin_out_half)))
+
+    feasible = delta <= delta_max_deg + 1e-6
+
+    # Periapsis altitude (ballistic-symmetric approximation; underestimates h_p
+    # for highly asymmetric powered flybys but the boundary case h_p == min_alt
+    # is exact when delta == delta_max_deg).
+    sin_half = np.sin(np.radians(delta/2.0))
+    if sin_half > 0:
+        v_avg = (vin_mag + vout_mag) / 2.0
+        rp_req_km = (mu_km3s2 / v_avg**2) * (1.0/sin_half - 1.0)
+        h_p_km = rp_req_km - R_km
+    else:
+        h_p_km = float('inf')
+
+    return {
+        'feasible':              bool(feasible),
+        'v_inf_in_kms':          vin_mag,
+        'v_inf_out_kms':         vout_mag,
+        'v_inf_in_vec':          v_inf_in.tolist(),
+        'v_inf_out_vec':         v_inf_out.tolist(),
+        'turn_angle_deg':        delta,
+        'turn_max_deg':          delta_max_deg,
+        'periapsis_alt_km':      h_p_km,
+        'safe_periapsis_alt_km': fb['min_alt'],
+        'body_radius_km':        R_km,
+        'energy_residual_kms':   float(vin_mag - vout_mag),
+    }
 
 
 # =============================================================================

@@ -15,20 +15,27 @@ The codebase was originally MATLAB, now **fully ported to Python** in `Python_Co
 
 ```
 Ae105c-Project/
-├── Python_Consolidated/          # Active Python codebase (6 files, ~3000 lines)
-│   ├── core.py                   # Constants, pykep Lambert/propagation wrappers, SPICE loading
-│   ├── optimization.py           # Delta-v computation, scoring, DE optimizer, beam search
-│   ├── greedy.py                 # Greedy/flyby algorithm (legacy approach)
-│   ├── visualization.py          # Flightpath animation, orbit plotting
-│   ├── scripts.py                # Runner entry points for all workflows
-│   ├── tradeoff.py               # Asteroid science/physical scoring (standalone)
-│   └── requirements.txt
-├── NOTABLE_ASTEROID_BSPs/        # 50 asteroid ephemeris files (.bsp)
+├── README.md                     # Friendly entry — overview + tutorial index
+├── METHODOLOGY.md                # Algorithm reference (consolidated from old PLAN docs)
+├── CLAUDE.md                     # This file (AI-assistant guidance)
+├── Tutorials/                    # 7 task-focused walkthroughs + FAQ
+├── docs/archive/                 # Historical PLAN docs (plan.md, etc.)
+├── Python_Consolidated/          # Active Python codebase (7 files)
+│   ├── main.py                   # CLI entry point — all user-facing workflows
+│   ├── core.py                   # Lambert/SPICE/flyby primitives + audit_flyby_geometry
+│   ├── optimization.py           # Δv scoring, DE optimizer, two-level + beam search, gravity assists
+│   ├── lowthrust.py              # Sims-Flanagan low-thrust leg solver
+│   ├── mass_optimization.py      # Mass-Pareto across 8 propulsion architectures (CCC..EEE)
+│   ├── visualization.py          # Flightpath animation, orbit plotting (library)
+│   ├── tradeoff.py               # Asteroid science/physical scoring (standalone, no SPICE)
+│   ├── requirements.txt
+│   └── gcp/                      # GCP cloud-runner scripts (gcp_config.py + 2 runners)
+├── NOTABLE_ASTEROID_BSPs/        # 69 asteroid ephemeris files (.bsp)
 ├── SPICE_BSPs/                   # Larger asteroid pool (49 BSPs)
-├── Renders/Asteroid_Plots/       # Generated images and GIFs (numbered 01-09)
+├── Renders/                      # Generated images and GIFs
+├── optimal_asteroid_paths/pkl/   # Saved optimization results (pickle)
 ├── asteroid_tradeoff.csv         # Ranked asteroid table (407 asteroids)
-├── Code/                         # Legacy MATLAB code (not maintained)
-└── CLAUDE.md
+└── Code/                         # Legacy MATLAB code (not maintained)
 ```
 
 ## Prerequisites
@@ -48,32 +55,31 @@ pip install -r requirements.txt
 
 ## Running the Code
 
-All scripts run from the **repository root** (not from `Python_Consolidated/`). The `NOTABLE_ASTEROID_BSPs/` folder must be in the working directory.
+Everything runs through `main.py` from the **repository root** (not from `Python_Consolidated/`). All subcommands resolve `NOTABLE_ASTEROID_BSPs/` relative to the repo root. For task-focused walkthroughs see `Tutorials/`.
 
-### Recommended workflows (in `scripts.py`):
+```bash
+# Optimization
+python Python_Consolidated/main.py optimize                       # two-level dv-only, all asteroids
+python Python_Consolidated/main.py optimize --science 0.7         # 70% dv + 30% science
+python Python_Consolidated/main.py optimize --diverse             # require C+S+X/M diversity
+python Python_Consolidated/main.py optimize --feasible            # diverse + physical-flyby audit (recommended)
+python Python_Consolidated/main.py optimize --beam 15             # beam search, K=15
+python Python_Consolidated/main.py optimize --pareto              # mass-Pareto across 8 architectures
 
-```python
-from scripts import *
+# Visualization & verification
+python Python_Consolidated/main.py list                           # list saved pkl results
+python Python_Consolidated/main.py plot RESULT.pkl                # show top-10 entries
+python Python_Consolidated/main.py plot RESULT.pkl --rank 1       # static 3D PNG of #1
+python Python_Consolidated/main.py plot RESULT.pkl --rank 1 --gif # animated GIF of #1
+python Python_Consolidated/main.py plot RESULT.pkl --names HEDDA BEATRIX PROSERPINA --gif
+python Python_Consolidated/main.py verify RESULT.pkl --rank 1     # audit flyby physics
 
-# 1. Two-level optimization (RECOMMENDED — best quality results)
-#    Coarse pass on all N^3 triplets, then fine-tune top 50
-results = run_two_level_optimize()
-
-# 2. With science weighting (70% delta-v, 30% science value)
-results = run_two_level_optimize(science_csv='asteroid_tradeoff.csv', alpha=0.7)
-
-# 3. Beam search (structured multi-stage, good for large pools)
-results = run_beam_search(beam_width=15)
-
-# 4. Brute-force N^3 (original method, slow but thorough)
-results = run_asteroid_selector()
-
-# 5. Mars flyby variant
-results = run_mars_transfer_selector()
-
-# 6. Visualization
-run_graphing_notable_asteroids()
+# Auxiliary
+python Python_Consolidated/main.py rank                           # rebuild asteroid_tradeoff.csv
+python Python_Consolidated/main.py animate-asteroids              # MP4 of all asteroid orbits
 ```
+
+`main.py plot` and `main.py verify` are generic over the saved-pkl formats — they handle two-level (`(i,j,k,result)` tuples), mass-Pareto (`{'all_results': [...]}`), `diverse_top3_feasible.pkl` (`{'audited': [...]}`), and single-triplet dicts.
 
 ## Architecture
 
@@ -86,7 +92,8 @@ Wraps pykep and spiceypy behind a clean interface. All units: **km, km/s, km^3/s
 | `solve_lambert(r1, r2, tof_days, m, mu)` | Wraps `pk.lambert_problem`. Returns (V1, V2, exitflag). |
 | `solve_lambert_best(r1, r2, tof_days, mu)` | Tries m=0,1,2 revolutions + both directions, returns best. |
 | `two_body_sim(t_final, x0, mu)` | Wraps `pk.propagate_lagrangian`. Returns (X, T) arrays. |
-| `compute_flyby_dv(v_in, v_out, v_planet, mu, r)` | Wraps `pk.fb_dv`. Returns powered flyby delta-v. |
+| `compute_flyby_dv(v_in, v_out, v_planet, mu, r)` | Wraps `pk.fb_dv` **with turn-angle feasibility check** (returns 1e3 km/s penalty if geometry impossible). |
+| `audit_flyby_geometry(et_launch, et_flyby, et_arr_a1, a1_id, arch)` | Independent post-hoc audit. Returns v_inf vectors, turn angle, max turn at safe r_p, periapsis altitude, feasibility flag. |
 | `load_kernels(bsp_folder, generic_path)` | Loads SPICE kernels, returns asteroid list. |
 | `get_state(body_id, et)` | Returns (r_km, v_km_s) via spiceypy. |
 
@@ -106,9 +113,23 @@ Wraps pykep and spiceypy behind a clean interface. All units: **km, km/s, km^3/s
 | `compute_path_with_flyby(...)` | Delta-v for Earth -> flyby -> A1 -> A2 -> A3 |
 | `generate_optimized_data(...)` | Brute-force N^3 loop (legacy). |
 
-### greedy.py — Greedy algorithm (legacy, suboptimal)
+### lowthrust.py — Low-thrust leg solver
 
-Sequential 3-leg optimization with Earth/Mars/direct flyby options. Per commit `9afb21a`: "gives too suboptimal results." Prefer `beam_search` or `two_level_optimize`.
+Sims-Flanagan direct transcription via `scipy.optimize.least_squares`. Splits a heliocentric leg into N segments with half-coast / impulsive kick / half-coast. Used by `mass_optimization.verify_with_full_lt` for verification of electric-propulsion legs.
+
+Constants: `ISP_CHEM=320s`, `ISP_ELEC=3100s`, `G0=9.80665`. Defaults: `DEFAULT_M_INIT_KG=1500`, `DEFAULT_THRUST_N=0.30`, `DEFAULT_NSEG=15`.
+
+### mass_optimization.py — Mass-Pareto across propulsion architectures
+
+| Function | Purpose |
+|----------|---------|
+| `compute_path_mass(...)` | Tsiolkovsky chain through 4 legs (L1=flyby, L2-L4=transfers). Returns `m_final_kg`, `dv_equiv_kms`, feasibility. |
+| `gravity_loss_factor(...)` | Surrogate multiplier on Lambert dv to estimate integrated low-thrust dv (calibrated). |
+| `optimize_for_architecture(...)` | DE optimization for a single arch_code (e.g. `'EEE'`). |
+| `pareto_optimize_triplet(...)` | All 8 architectures × multi-seed × m-revs sweep for one triplet. |
+| `verify_with_full_lt(...)` | Re-evaluate top arch_result with the real Sims-Flanagan solver. |
+
+Architecture codes: 3-letter strings for L2/L3/L4 modes — `'C'`=chemical (Isp 320s), `'E'`=electric (Isp 3100s). All 8 = `ARCH_CODES`.
 
 ### visualization.py — Plotting and animation
 
