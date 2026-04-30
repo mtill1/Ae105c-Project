@@ -130,6 +130,77 @@ changed.
 
 ---
 
+## What the optimizer is solving for (constraints summary)
+
+When you run `optimize`, the search is constrained as follows.
+
+### Hard physical constraints
+
+| # | Constraint | What happens if violated |
+|---|---|---|
+| 1 | **Mission duration ≤ 14 years** (BSP ephemeris ends ~2050) | Penalty 1000 km/s |
+| 2 | **Flyby turn angle ≤ natural max at the safe periapsis altitude** (Mars 200 km, Moon 100 km, Earth 300 km) | Penalty 1000 km/s |
+| 3 | **Lambert solver must converge on every leg** | Penalty 1000 km/s |
+
+The patched `core.compute_flyby_dv` enforces #2 — past results showed the unpatched solver allowed sub-surface flybys (see [`METHODOLOGY.md`](METHODOLOGY.md) §9).
+
+### Decision-variable bounds (7-D for flyby missions)
+
+| Variable | Range |
+|---|---|
+| Launch offset within window | 0 – 9 yr (default window 2027–2035) |
+| Earth → flyby-body TOF | Mars: 0.3–3 yr · Moon: 1–10 days · Earth: 1–3 yr |
+| Flyby → A1 TOF | 2 wk – 5 yr |
+| Stay at A1 | 3 mo – 1 yr |
+| A1 → A2 TOF | 2 wk – 5 yr |
+| Stay at A2 | 3 mo – 1 yr |
+| A2 → A3 TOF | 2 wk – 5 yr |
+
+### Search restrictions per mode
+
+| Mode | Architecture(s) | Composition | Asteroid pool |
+|---|---|---|---|
+| `optimize` (default) | direct + Moon + Mars + Earth GA | any | All 69 |
+| `optimize --diverse` | same | C + S + X/M required | All 69 |
+| `optimize --feasible` | same, **with post-hoc geometric audit** | C + S + X/M required | All 69 |
+| `optimize --pareto` | 8 propulsion archs (CCC...EEE) on a fixed flyby body | any | top 50 from seed pkl |
+| `gcp/run_mars_diverse.py` | Mars only | C + S + X/M required | All 69 |
+
+### Spacecraft model
+
+- **Impulsive Δv at every chemical burn** (`optimize`, `--diverse`, `--feasible`)
+- **Continuous low-thrust on electric legs** (`--pareto`): default `m_init = 1500 kg`, `thrust = 0.30 N`, `Isp_chem = 320 s`, `Isp_elec = 3100 s`. Tunable via `--m-init` / `--thrust`.
+- **Launch Δv counted in total** — no separate launcher model
+- **Reference frame:** ECLIPJ2000, heliocentric (observer = Sun barycenter)
+
+### Numerical settings
+
+- DE: `maxiter=200–300`, `popsize=15–18`, multi-seed (3 seeds), small Lambert-revolution sweep (3 m-revs combos), L-BFGS-B polish
+- Two-level: coarse pre-screen on all triplets → full DE on top 25–50
+
+### Free knobs the optimizer chooses
+
+- v_inf magnitude and direction at the flyby body
+- Periapsis altitude above the safe minimum (it doesn't have to ride the limit)
+- Powered flyby Δv (set to 0 if the geometry allows pure ballistic turn — usually does)
+- Launch date within the window
+- Stay durations between the 3 mo – 1 yr bounds
+
+### Notably *not* modeled
+
+| | |
+|---|---|
+| Operational margins | The 200 km Mars / 100 km Moon altitude is the *hard physics* limit. Real flight design typically adds 300–500 km of margin. |
+| Engine thrust authority (chemical) | Assumed infinite — impulsive burns happen instantaneously. |
+| Solar power, attitude, comms geometry | Not modeled. |
+| Real-world launcher C3 | We just charge launch Δv to the spacecraft. |
+| Asteroid arrival uncertainty | SPICE ephemerides treated as exact. |
+| Spacecraft mass / propellant load | Only relevant for `--pareto`; absent from impulsive Δv minimization. |
+
+For full algorithmic detail see [`METHODOLOGY.md`](METHODOLOGY.md).
+
+---
+
 ## Quick troubleshooting
 
 For comprehensive answers see [`Tutorials/FAQ.md`](Tutorials/FAQ.md).
