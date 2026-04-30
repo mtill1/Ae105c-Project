@@ -19,8 +19,11 @@ from scipy.optimize import differential_evolution
 from tqdm import tqdm
 
 from core import (solve_lambert, solve_lambert_best, get_state, get_mu, get_radius,
-                  compute_flyby_dv, DAY, YEAR, WEEK, MONTH, MU_SUN,
+                  compute_flyby_dv, estimate_ballistic_flyby_altitude_km,
+                  DAY, YEAR, WEEK, MONTH, MU_SUN,
                   MAX_MISSION_DURATION, unpack_input, unpack_mars_input)
+
+MAX_EARTH_DEPARTURE_DV = 7.0  # km/s cap provided by launch system
 
 
 # =============================================================================
@@ -51,14 +54,19 @@ def compute_path_deltav(a_id_1, a_id_2, a_id_3, et_launch,
                 'delta_v_total': 1e3}
 
     dv_launch = earth_lv - earth_launch_v
+    if np.linalg.norm(dv_launch) > MAX_EARTH_DEPARTURE_DV:
+        return {'delta_v_launch': dv_launch, 'delta_v_A1_arrive': np.array([]),
+                'delta_v_A1_leave': np.array([]), 'delta_v_A2_arrive': np.array([]),
+                'delta_v_A2_leave': np.array([]), 'delta_v_A3_arrive': np.array([]),
+                'delta_v_total': 1e3}
     dv_A1_arr = a1_arr_lv - a_1_arrive_v
     dv_A1_lv = a1_lv_lv - a_1_leaving_v
     dv_A2_arr = a2_arr_lv - a_2_arrive_v
     dv_A2_lv = a2_lv_lv - a_2_leaving_v
     dv_A3_arr = a3_arr_lv - a_3_arrive_v
 
-    dv_total = (np.linalg.norm(dv_launch) + np.linalg.norm(dv_A1_arr)
-                + np.linalg.norm(dv_A1_lv) + np.linalg.norm(dv_A2_arr)
+    # Objective excludes Earth departure Δv (provided by launch system, capped above).
+    dv_total = (np.linalg.norm(dv_A1_arr) + np.linalg.norm(dv_A1_lv) + np.linalg.norm(dv_A2_arr)
                 + np.linalg.norm(dv_A2_lv) + np.linalg.norm(dv_A3_arr))
 
     return {'delta_v_launch': dv_launch, 'delta_v_A1_arrive': dv_A1_arr,
@@ -79,7 +87,9 @@ def compute_mars_path_deltav(a_id_1, a_id_2, a_id_3, et_launch, et_mars,
     a3_arr_r, a3_arr_v = get_state(str(a_id_3), et_arrive_3)
 
     mu_mars = get_mu(4)
-    safe_radius = get_radius(499) + 200  # 200 km altitude
+    mars_radius = get_radius(499)
+    min_alt_mars = 200.0
+    safe_radius = mars_radius + min_alt_mars  # 200 km altitude
 
     e_lv, mars_arr_v_lam, ef1 = solve_lambert(earth_r, mars_r, -(et_mars-et_launch)/DAY, m_mars, MU_SUN)
     v_mars_leave, a1_arr_lv, ef2 = solve_lambert(mars_r, a1_arr_r, -(et_arrive_1-et_mars)/DAY, m_1, MU_SUN)
@@ -94,15 +104,29 @@ def compute_mars_path_deltav(a_id_1, a_id_2, a_id_3, et_launch, et_mars,
                 'delta_v_total': 1e3}
 
     dv_launch = e_lv - earth_v
+    if np.linalg.norm(dv_launch) > MAX_EARTH_DEPARTURE_DV:
+        return {'delta_v_launch': dv_launch, 'v_mars_leave': np.array([]),
+                'delta_v_mars': 1e3, 'delta_v_A1_arrive': np.array([]),
+                'delta_v_A1_leave': np.array([]), 'delta_v_A2_arrive': np.array([]),
+                'delta_v_A2_leave': np.array([]), 'delta_v_A3_arrive': np.array([]),
+                'delta_v_total': 1e3}
     dv_A1_arr = a1_arr_lv - a1_arr_v
     dv_A1_lv = a1_lv_lv - a1_lv_v
     dv_A2_arr = a2_arr_lv - a2_arr_v
     dv_A2_lv = a2_lv_lv - a2_lv_v
     dv_A3_arr = a3_arr_lv - a3_arr_v
+    flyby_alt_km = estimate_ballistic_flyby_altitude_km(
+        mars_arr_v_lam, v_mars_leave, mars_v, mu_mars, mars_radius)
+    if not np.isfinite(flyby_alt_km) or flyby_alt_km < min_alt_mars:
+        return {'delta_v_launch': dv_launch, 'v_mars_leave': v_mars_leave,
+                'delta_v_mars': 1e3, 'delta_v_A1_arrive': np.array([]),
+                'delta_v_A1_leave': np.array([]), 'delta_v_A2_arrive': np.array([]),
+                'delta_v_A2_leave': np.array([]), 'delta_v_A3_arrive': np.array([]),
+                'delta_v_total': 1e3}
     dv_mars = compute_flyby_dv(mars_arr_v_lam, v_mars_leave, mars_v, mu_mars, safe_radius)
 
-    dv_total = (np.linalg.norm(dv_launch) + np.linalg.norm(dv_A1_arr)
-                + np.linalg.norm(dv_A1_lv) + np.linalg.norm(dv_A2_arr)
+    # Objective excludes Earth departure Δv (provided by launch system, capped above).
+    dv_total = (np.linalg.norm(dv_A1_arr) + np.linalg.norm(dv_A1_lv) + np.linalg.norm(dv_A2_arr)
                 + np.linalg.norm(dv_A2_lv) + np.linalg.norm(dv_A3_arr)
                 + abs(dv_mars))
 
@@ -222,7 +246,8 @@ def compute_path_with_flyby(a_id_1, a_id_2, a_id_3, et_launch, et_flyby,
     a3_arr_r, a3_arr_v = get_state(str(a_id_3), et_arrive_3)
 
     mu_flyby = get_mu(fb['mu_body'])
-    safe_radius = get_radius(fb['radii_body']) + fb['min_alt']
+    body_radius = get_radius(fb['radii_body'])
+    safe_radius = body_radius + fb['min_alt']
 
     # Leg 0: Earth -> flyby body. For a REAL Earth gravity assist the spacecraft
     # must (a) fly a visibly different heliocentric orbit (v∞ >= 3 km/s, else it
@@ -261,6 +286,14 @@ def compute_path_with_flyby(a_id_1, a_id_2, a_id_3, et_launch, et_flyby,
                 'architecture': flyby_name}
 
     dv_launch = e_lv - earth_v
+    if np.linalg.norm(dv_launch) > MAX_EARTH_DEPARTURE_DV:
+        return {'delta_v_total': 1e3, 'delta_v_launch': dv_launch,
+                'architecture': flyby_name}
+    flyby_alt_km = estimate_ballistic_flyby_altitude_km(
+        fb_arr_lv, fb_dep_lv, flyby_v, mu_flyby, body_radius)
+    if not np.isfinite(flyby_alt_km) or flyby_alt_km < fb['min_alt']:
+        return {'delta_v_total': 1e3, 'delta_v_launch': dv_launch,
+                'architecture': flyby_name}
     dv_flyby = compute_flyby_dv(fb_arr_lv, fb_dep_lv, flyby_v, mu_flyby, safe_radius)
     dv_A1_arr = a1_arr_lv - a1_arr_v
     dv_A1_lv = a1_lv_lv - a1_lv_v
@@ -274,8 +307,8 @@ def compute_path_with_flyby(a_id_1, a_id_2, a_id_3, et_launch, et_flyby,
         return {'delta_v_total': 1e3, 'delta_v_launch': np.array([]),
                 'architecture': flyby_name}
 
-    dv_total = (np.linalg.norm(dv_launch) + abs(dv_flyby)
-                + np.linalg.norm(dv_A1_arr) + np.linalg.norm(dv_A1_lv)
+    # Objective excludes Earth departure Δv (provided by launch system, capped above).
+    dv_total = (abs(dv_flyby) + np.linalg.norm(dv_A1_arr) + np.linalg.norm(dv_A1_lv)
                 + np.linalg.norm(dv_A2_arr) + np.linalg.norm(dv_A2_lv)
                 + np.linalg.norm(dv_A3_arr))
 
@@ -286,6 +319,7 @@ def compute_path_with_flyby(a_id_1, a_id_2, a_id_3, et_launch, et_flyby,
         'delta_v_A3_arrive': dv_A3_arr, 'delta_v_total': dv_total,
         'architecture': flyby_name,
         'flyby_body': fb_id, 'et_flyby': et_flyby,
+        'flyby_altitude_km': flyby_alt_km,
     }
 
 
@@ -404,7 +438,8 @@ def optimize_best_architecture(a_id_1, a_id_2, a_id_3, launch_range,
 # =============================================================================
 
 def generate_optimized_data(asteroid_list, m_1, m_2, m_3,
-                            launch_utc_min, launch_utc_max):
+                            launch_utc_min, launch_utc_max,
+                            comp_map=None, required_compositions=None):
     num = len(asteroid_list)
     default = {'delta_v_total': np.inf, 'et_launch': np.inf}
     data = [[[dict(default) for _ in range(num)] for _ in range(num)] for _ in range(num)]
@@ -420,6 +455,10 @@ def generate_optimized_data(asteroid_list, m_1, m_2, m_3,
                 ids = [asteroid_list[x]['ID'] for x in [i, j, k]]
                 if ids[0]==ids[1] or ids[1]==ids[2] or ids[2]==ids[0]:
                     pbar.update(1); continue
+                if comp_map is not None:
+                    if not _triplet_has_diverse_composition(i, j, k, asteroid_list,
+                                                            comp_map, required_compositions):
+                        pbar.update(1); continue
                 strs = [str(int(x)) for x in ids]
                 data[i][j][k] = optimize_times(*strs, launch_dates, m_1, m_2, m_3)
                 pbar.update(1)
@@ -432,7 +471,8 @@ def generate_optimized_data(asteroid_list, m_1, m_2, m_3,
 
 
 def generate_mars_transfer_optimized(asteroid_list, m_1, m_2, m_3, m_mars,
-                                     launch_utc_min, launch_utc_max):
+                                     launch_utc_min, launch_utc_max,
+                                     comp_map=None, required_compositions=None):
     num = len(asteroid_list)
     default = {'delta_v_total': np.inf, 'et_launch': np.inf}
     data = [[[dict(default) for _ in range(num)] for _ in range(num)] for _ in range(num)]
@@ -448,6 +488,10 @@ def generate_mars_transfer_optimized(asteroid_list, m_1, m_2, m_3, m_mars,
                 ids = [asteroid_list[x]['ID'] for x in [i, j, k]]
                 if ids[0]==ids[1] or ids[1]==ids[2] or ids[2]==ids[0]:
                     pbar.update(1); continue
+                if comp_map is not None:
+                    if not _triplet_has_diverse_composition(i, j, k, asteroid_list,
+                                                            comp_map, required_compositions):
+                        pbar.update(1); continue
                 strs = [str(int(x)) for x in ids]
                 data[i][j][k] = optimize_mars_times(*strs, launch_dates, m_1, m_2, m_3, m_mars)
                 pbar.update(1)
@@ -602,6 +646,11 @@ def two_level_optimize(asteroid_list, m_1, m_2, m_3,
 
     results = []
     for i, j, k, _, coarse_arch in tqdm(top, desc="Fine"):
+        if comp_map is not None:
+            # Keep a final guard so no non-diverse triplet can enter results.
+            if not _triplet_has_diverse_composition(i, j, k, asteroid_list,
+                                                    comp_map, required_compositions):
+                continue
         strs = [str(int(asteroid_list[x]['ID'])) for x in [i, j, k]]
         result, best_arch = optimize_best_architecture(*strs, launch_dates,
                                                         m_1, m_2, m_3, quick=False)

@@ -14,6 +14,9 @@ inter-body transfer legs (L2 = flyby->A1, L3 = A1->A2, L4 = A2->A3).
 L1 (Earth launch + powered flyby periapsis) is always chemical.
 
 Letters: 'C' = chemical (Isp 320s), 'E' = electric (Isp 3100s).
+
+Constraint: mixed transfer propulsion is disallowed. Only all-chemical ('CCC')
+or all-electric ('EEE') architectures are evaluated.
 """
 
 import numpy as np
@@ -80,7 +83,7 @@ def gravity_loss_factor(lambert_dv_kms, tof_sec, m_kg, thrust_N):
 # CORE: mass-aware path evaluation
 # =============================================================================
 
-ARCH_CODES = ['CCC', 'CCE', 'CEC', 'CEE', 'ECC', 'ECE', 'EEC', 'EEE']
+ARCH_CODES = ['CCC', 'EEE']
 
 
 def compute_path_mass(a_id_1, a_id_2, a_id_3,

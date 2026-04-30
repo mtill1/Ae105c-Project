@@ -6,11 +6,11 @@ USAGE
 Run from the repo root (Ae105c-Project/), not from Python_Consolidated/.
 
     # Optimization
-    python Python_Consolidated/main.py optimize                       # two-level, all asteroids, dv-only
+    python Python_Consolidated/main.py optimize                       # two-level, C+S+X/M constrained, dv-only
     python Python_Consolidated/main.py optimize --science 0.7         # 70% dv + 30% science
     python Python_Consolidated/main.py optimize --diverse             # require C+S+X/M
     python Python_Consolidated/main.py optimize --beam 15             # beam search
-    python Python_Consolidated/main.py optimize --pareto              # mass-Pareto across 8 architectures
+    python Python_Consolidated/main.py optimize --pareto              # mass-Pareto across pure CCC/EEE architectures
 
     # Visualization
     python Python_Consolidated/main.py list                           # list pkl results
@@ -100,9 +100,9 @@ def cmd_optimize(args):
         print(f"Science weighting: alpha={alpha} ({100*alpha:.0f}% dv + "
               f"{100*(1-alpha):.0f}% science)")
 
-    comp_map = None
-    if args.diverse or args.feasible:
-        comp_map = load_composition_map(args.tradeoff_csv)
+    # Constraint enforced by default: candidate triplets must be C+S+X/M diverse.
+    comp_map = load_composition_map(args.tradeoff_csv)
+    required_compositions = {'C', 'S', 'X/M'}
 
     if args.feasible:
         return _run_feasible(args, asteroid_list, comp_map)
@@ -115,7 +115,7 @@ def cmd_optimize(args):
     return two_level_optimize(
         asteroid_list, 0, 0, 0, args.launch_min, args.launch_max,
         top_n=args.top_n, science_scores=science_scores, alpha=alpha,
-        comp_map=comp_map)
+        comp_map=comp_map, required_compositions=required_compositions)
 
 
 def _run_feasible(args, asteroid_list, comp_map):
@@ -870,7 +870,7 @@ def build_parser():
     o.add_argument('--beam', type=int, default=None, metavar='K',
                    help='Use beam search with given beam width K')
     o.add_argument('--pareto', action='store_true',
-                   help='Mass-Pareto across 8 propulsion architectures')
+                   help='Mass-Pareto across pure propulsion architectures (CCC/EEE)')
     o.add_argument('--pareto-seed', default=None,
                    help='Seed pkl for --pareto (default: results_69ast_ga.pkl)')
     o.add_argument('--flyby', default='mars',

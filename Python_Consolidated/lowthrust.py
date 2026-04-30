@@ -26,6 +26,7 @@ ISP_ELEC = 3100.0
 # Default spacecraft (Dawn-like)
 DEFAULT_M_INIT_KG = 1500.0
 DEFAULT_THRUST_N  = 0.30
+MAX_THRUST_N      = 0.30  # 300 mN hard cap
 DEFAULT_NSEG      = 15
 
 
@@ -116,6 +117,13 @@ def optimize_lt_leg(r0_km, v0_kms, r1_km, v1_kms, tof_sec,
     """
     r0 = np.asarray(r0_km, float); v0 = np.asarray(v0_kms, float)
     r1 = np.asarray(r1_km, float); v1 = np.asarray(v1_kms, float)
+
+    if thrust_N < 0:
+        return {'converged': False, 'reason': f'invalid thrust_N={thrust_N:.6f} N (must be >= 0)',
+                'm_final': 0.0, 'dv_integral_kms': np.inf}
+    if thrust_N > MAX_THRUST_N:
+        return {'converged': False, 'reason': f'thrust cap exceeded: {thrust_N:.6f} N > {MAX_THRUST_N:.2f} N',
+                'm_final': 0.0, 'dv_integral_kms': np.inf}
 
     # Feasibility: can thrust deliver the needed Δv in the given TOF?
     accel_kms2 = thrust_N / m_init_kg / 1e3

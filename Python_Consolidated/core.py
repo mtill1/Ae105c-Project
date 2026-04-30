@@ -241,6 +241,42 @@ def compute_flyby_dv(v_sc_in_km_s, v_sc_out_km_s, v_planet_km_s,
     return dv_ms * _M2KM
 
 
+def estimate_ballistic_flyby_altitude_km(v_sc_in_km_s, v_sc_out_km_s, v_planet_km_s,
+                                         mu_planet_km3s2, body_radius_km):
+    """Estimate unpowered flyby periapsis altitude from v-infinity geometry.
+
+    Uses incoming/outgoing v-infinity vectors (planet-relative) and the
+    hyperbolic turning relation to infer the required periapsis radius for an
+    unpowered flyby. Returns altitude above the body's mean radius.
+    """
+    v_rel_in = np.asarray(v_sc_in_km_s, dtype=float) - np.asarray(v_planet_km_s, dtype=float)
+    v_rel_out = np.asarray(v_sc_out_km_s, dtype=float) - np.asarray(v_planet_km_s, dtype=float)
+    v_in_mag = np.linalg.norm(v_rel_in)
+    v_out_mag = np.linalg.norm(v_rel_out)
+
+    if v_in_mag < 1e-12 or v_out_mag < 1e-12:
+        return -np.inf
+
+    # Ballistic flyby assumes approximately conserved |v_inf|.
+    v_inf = 0.5 * (v_in_mag + v_out_mag)
+    if v_inf < 1e-12:
+        return -np.inf
+
+    cos_delta = np.clip(np.dot(v_rel_in, v_rel_out) / (v_in_mag * v_out_mag), -1.0, 1.0)
+    delta = float(np.arccos(cos_delta))
+
+    # Near-zero turn implies effectively infinite periapsis radius.
+    if delta < 1e-9:
+        return np.inf
+
+    sin_half = np.sin(0.5 * delta)
+    if sin_half <= 0:
+        return -np.inf
+
+    rp_km = (mu_planet_km3s2 / (v_inf ** 2)) * (1.0 / sin_half - 1.0)
+    return float(rp_km - body_radius_km)
+
+
 # =============================================================================
 # FLYBY GEOMETRY AUDIT (post-hoc verification)
 # =============================================================================
