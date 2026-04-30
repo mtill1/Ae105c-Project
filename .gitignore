@@ -6,6 +6,8 @@
 # --- Compiled Files and Binaries ---
 *.mex*      # Compiled MEX binaries (platform-specific)
 *.p         # Content-obscured P-code files
+*.csv
+*.png
 
 # --- Generated Simulation Folders (Simulink/Code Gen) ---
 slprj/      # Simulink generation folder
@@ -27,7 +29,9 @@ Renders/
 
 # Python cache
 __pycache__/
+.cache/
 *.pyc
+.mplconfig/
 
 # OS files
 .DS_Store
