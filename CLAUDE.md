@@ -8,8 +8,15 @@ Asteroid mission trajectory optimization for Ae105c. Designs a spacecraft missio
 
 1. **Direct**: Earth -> Asteroid 1 -> Asteroid 2 -> Asteroid 3
 2. **Mars flyby**: Earth -> Mars (gravity assist) -> A1 -> A2 -> A3
+3. **Earth + Mars chain**: Earth -> Earth GA loop -> Mars GA -> A1 -> A2 -> A3 (used by the selected mission concept)
 
 The codebase was originally MATLAB, now **fully ported to Python** in `Python_Consolidated/`. The MATLAB code in `Code/` is legacy and no longer maintained.
+
+**Selected mission concept:** PARTHENOPE → PSYCHE → THEMIS via **LT-after-launch chain** with optional Mars ballistic GA. Architecture: impulsive launch (≤ 7 km/s, excluded from objective), then Sims-Flanagan electric (Isp 3100 s, thrust ≤ 0.30 N) for ALL post-launch legs. See [`MISSION_PARTHENOPE_PSYCHE_THEMIS.md`](MISSION_PARTHENOPE_PSYCHE_THEMIS.md) §0 for the frozen constraint setup and full writeup.
+
+The LT-chain optimizer is in `Python_Consolidated/lt_chain_optimization.py`; the GCP runner is `gcp/run_ppt_lt_chain.py`. Output includes per-leg integrated Δv, throttle-vs-time profiles (15 segments × 3 components per leg), Mars flyby v_∞ vectors / turn / altitude, full date/Δv breakdown.
+
+Frozen constraint setup and required output specification: [`CONSTRAINTS_AND_OUTPUTS.md`](CONSTRAINTS_AND_OUTPUTS.md).
 
 ## Repository Structure
 
@@ -17,6 +24,7 @@ The codebase was originally MATLAB, now **fully ported to Python** in `Python_Co
 Ae105c-Project/
 ├── README.md                     # Friendly entry — overview + tutorial index
 ├── METHODOLOGY.md                # Algorithm reference (consolidated from old PLAN docs)
+├── MISSION_PARTHENOPE_PSYCHE_THEMIS.md  # Selected mission concept + full physics writeup
 ├── CLAUDE.md                     # This file (AI-assistant guidance)
 ├── Tutorials/                    # 7 task-focused walkthroughs + FAQ
 ├── docs/archive/                 # Historical PLAN docs (plan.md, etc.)
@@ -28,8 +36,11 @@ Ae105c-Project/
 │   ├── mass_optimization.py      # Mass-Pareto across 8 propulsion architectures (CCC..EEE)
 │   ├── visualization.py          # Flightpath animation, orbit plotting (library)
 │   ├── tradeoff.py               # Asteroid science/physical scoring (standalone, no SPICE)
-│   ├── requirements.txt
-│   └── gcp/                      # GCP cloud-runner scripts (gcp_config.py + 2 runners)
+│   ├── check_mission.py          # Independent physics verifier (re-derives all Δv from scratch)
+│   ├── api/                      # FastAPI HTTP service: server.py, schemas.py, jobs.py, client.py
+│   │                             #   Run: python -m Python_Consolidated.api
+│   ├── gcp/                      # GCP cloud-runner scripts (3 files)
+│   └── requirements.txt
 ├── NOTABLE_ASTEROID_BSPs/        # 69 asteroid ephemeris files (.bsp)
 ├── SPICE_BSPs/                   # Larger asteroid pool (49 BSPs)
 ├── Renders/                      # Generated images and GIFs
@@ -72,12 +83,44 @@ python Python_Consolidated/main.py plot RESULT.pkl                # show top-10 
 python Python_Consolidated/main.py plot RESULT.pkl --rank 1       # static 3D PNG of #1
 python Python_Consolidated/main.py plot RESULT.pkl --rank 1 --gif # animated GIF of #1
 python Python_Consolidated/main.py plot RESULT.pkl --names HEDDA BEATRIX PROSERPINA --gif
-python Python_Consolidated/main.py verify RESULT.pkl --rank 1     # audit flyby physics
+python Python_Consolidated/main.py verify RESULT.pkl --rank 1     # audit flyby physics (pass/fail)
+python Python_Consolidated/main.py inspect RESULT.pkl --rank 1    # full per-leg dump (Lambert V1/V2, Δv vectors, flyby diagnostics)
+python Python_Consolidated/main.py inspect RESULT.pkl --top 5     # inspect top 5 entries
 
 # Auxiliary
 python Python_Consolidated/main.py rank                           # rebuild asteroid_tradeoff.csv
 python Python_Consolidated/main.py animate-asteroids              # MP4 of all asteroid orbits
 ```
+
+GCP runner env var conventions (for `gcp/run_mars_diverse_science.py`):
+- `ALPHA` (0–1): Δv weight in combined score. 1.0 = pure Δv, lower = more science.
+- `REQUIRED_ASTEROIDS=A,B`: at least one of {A,B} must appear in every triplet
+- `REQUIRE_ALL_ASTEROIDS=A,B`: ALL of {A,B} must appear in every triplet (overrides REQUIRED)
+
+## HTTP API
+
+Same workflows exposed over HTTP — see `Tutorials/07_using_the_api.md`.
+
+```bash
+python -m Python_Consolidated.api          # local server at :8000
+# Swagger UI: http://localhost:8000/docs
+```
+
+API package layout:
+- `api/server.py` — FastAPI app, all route definitions
+- `api/schemas.py` — Pydantic request/response models
+- `api/jobs.py` — SQLite-backed job queue with subprocess + GCP executors
+- `api/client.py` — Python client (`Client` class with `Job` wrapper)
+- `api/serialization.py` — pkl/numpy → JSON-safe dict
+- `api/__main__.py` — `python -m Python_Consolidated.api` entrypoint
+
+Job state: `optimal_asteroid_paths/api_jobs/jobs.db` (SQLite).
+Job logs: `optimal_asteroid_paths/api_jobs/<uuid>.log`.
+
+Endpoints (all under `/api/v1/`):
+- `GET /asteroids` `GET /results` `GET /results/{f}` `GET /results/{f}/entries/{rank}`
+- `POST /verify` `POST /inspect`
+- `POST /jobs/optimize` `GET /jobs` `GET /jobs/{id}` `DELETE /jobs/{id}` `GET /jobs/{id}/log`
 
 `main.py plot` and `main.py verify` are generic over the saved-pkl formats — they handle two-level (`(i,j,k,result)` tuples), mass-Pareto (`{'all_results': [...]}`), `diverse_top3_feasible.pkl` (`{'audited': [...]}`), and single-triplet dicts.
 
@@ -156,6 +199,13 @@ Reads `sbdb_query_results.csv` from JPL SBDB and outputs `asteroid_tradeoff.csv`
 
 ## Current Best Results (saved — do NOT re-run unless asked)
 
+⚠ **WARNING:** Many older result pkls predate the **ballistic-flyby fix**
+(see `core.compute_flyby_dv` and `core.BALLISTIC_VINF_TOLERANCE_KMS`).
+Their flybys may be powered (energy non-conserving), which the project no
+longer accepts. Use `python Python_Consolidated/check_mission.py <pkl>` to
+verify before quoting any number from the older files. The selected mission
+in `MISSION_PARTHENOPE_PSYCHE_THEMIS.md` uses the corrected pipeline.
+
 Results are saved as pickle files in `optimal_asteroid_paths/pkl/`. Load with:
 ```python
 import pickle
@@ -163,7 +213,21 @@ with open('optimal_asteroid_paths/pkl/results_69ast_ga.pkl', 'rb') as f:
     results = pickle.load(f)  # list of (i, j, k, result_dict)
 ```
 
-### Best paths — minimum delta-v (69 asteroids, C+S+X/M, gravity assists)
+### Selected mission concept (Earth + Mars GA chain)
+
+| Rank | Path | dV (km/s) | Architecture | Notes |
+|------|------|:---------:|:-----:|---|
+| **1** | **PARTHENOPE [S] → PSYCHE [X/M] → THEMIS [C]** | **13.45** | Earth GA + Mars GA chain | Earth GA: 0.74 km/s Oberth burn; Mars GA: ballistic. See `MISSION_PARTHENOPE_PSYCHE_THEMIS.md`. |
+
+### Best paths — minimum delta-v, ballistic-only Mars GA (post-fix)
+
+| Rank | Path | dV (km/s) | Flyby | Notes |
+|------|------|:---------:|:-----:|---|
+| 1 | **HARMONIA [S] → LUTETIA [X/M] → IRMA [C]** | **12.97** | Mars (ballistic) | Verified — passes both geometric + ballistic checks |
+| 2 | HARMONIA → LUTETIA → AGLAJA | 13.04 | Mars (ballistic) | |
+| 3 | HARMONIA → LUTETIA → HEDDA | 13.05 | Mars (ballistic) | |
+
+### Best paths — minimum delta-v, OLD pre-fix (powered flybys allowed) — DO NOT TRUST
 
 | Rank | Path | dV (km/s) | Flyby |
 |------|------|:---------:|:-----:|

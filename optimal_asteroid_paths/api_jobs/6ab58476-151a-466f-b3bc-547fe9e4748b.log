@@ -1,0 +1,67 @@
+/opt/anaconda3/lib/python3.13/site-packages/pandas/core/computation/expressions.py:22: UserWarning: Pandas requires version '2.10.2' or newer of 'numexpr' (version '2.10.1' currently installed).
+  from pandas.core.computation.check import NUMEXPR_INSTALLED
+Beam Stage 1: Earth -> each asteroid...
+Stage 1:   0%|          | 0/73 [00:00<?, ?it/s]Stage 1:   3%|▎         | 2/73 [00:00<00:01, 38.31it/s]
+Traceback (most recent call last):
+  File "/Users/rebnoob/Desktop/Ae105c-Project/Python_Consolidated/main.py", line 1165, in <module>
+    main()
+    ~~~~^^
+  File "/Users/rebnoob/Desktop/Ae105c-Project/Python_Consolidated/main.py", line 1161, in main
+    args.func(args)
+    ~~~~~~~~~^^^^^^
+  File "/Users/rebnoob/Desktop/Ae105c-Project/Python_Consolidated/main.py", line 112, in cmd_optimize
+    return beam_search(asteroid_list, args.launch_min, args.launch_max,
+                       beam_width=args.beam, science_scores=science_scores,
+                       alpha=alpha)
+  File "/Users/rebnoob/Desktop/Ae105c-Project/Python_Consolidated/optimization.py", line 685, in beam_search
+    dv, _, et_arr = _leg_dv('399', str(int(asteroid_list[i]['ID'])),
+                    ~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                             et_launch, (2*WEEK, 5*YEAR), m_1)
+                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/rebnoob/Desktop/Ae105c-Project/Python_Consolidated/optimization.py", line 671, in _leg_dv
+    res = differential_evolution(obj, bounds, maxiter=50, tol=0.1,
+                                 seed=42, polish=True, popsize=5, updating='deferred')
+  File "/opt/anaconda3/lib/python3.13/site-packages/scipy/_lib/_util.py", line 440, in wrapper
+    return fun(*args, **kwargs)
+  File "/opt/anaconda3/lib/python3.13/site-packages/scipy/optimize/_differentialevolution.py", line 501, in differential_evolution
+    ret = solver.solve()
+  File "/opt/anaconda3/lib/python3.13/site-packages/scipy/optimize/_differentialevolution.py", line 1185, in solve
+    next(self)
+    ~~~~^^^^^^
+  File "/opt/anaconda3/lib/python3.13/site-packages/scipy/optimize/_differentialevolution.py", line 1641, in __next__
+    trial_energies[feasible] = self._calculate_population_energies(
+                               ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        trial_pop[feasible])
+        ^^^^^^^^^^^^^^^^^^^^
+  File "/opt/anaconda3/lib/python3.13/site-packages/scipy/optimize/_differentialevolution.py", line 1337, in _calculate_population_energies
+    calc_energies = list(
+        self._mapwrapper(self.func, parameters_pop[0:S])
+    )
+  File "/opt/anaconda3/lib/python3.13/site-packages/scipy/_lib/_util.py", line 657, in __call__
+    return self.f(x, *self.args)
+           ~~~~~~^^^^^^^^^^^^^^^
+  File "/Users/rebnoob/Desktop/Ae105c-Project/Python_Consolidated/optimization.py", line 665, in obj
+    r2, v2 = get_state(body2_id, et_arr)
+             ~~~~~~~~~^^^^^^^^^^^^^^^^^^
+  File "/Users/rebnoob/Desktop/Ae105c-Project/Python_Consolidated/core.py", line 361, in get_state
+    state, _ = spiceypy.spkezr(str(body_id), et, 'ECLIPJ2000', 'NONE', '10')
+               ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/anaconda3/lib/python3.13/site-packages/spiceypy/spiceypy.py", line 149, in with_errcheck
+    check_for_spice_error(f)
+    ~~~~~~~~~~~~~~~~~~~~~^^^
+  File "/opt/anaconda3/lib/python3.13/site-packages/spiceypy/spiceypy.py", line 132, in check_for_spice_error
+    raise dynamically_instantiate_spiceyerror(
+        short=short, explain=explain, long=long, traceback=traceback
+    )
+spiceypy.utils.exceptions.SpiceSPKINSUFFDATA: 
+================================================================================
+
+Toolkit version: CSPICE_N0067
+
+SPICE(SPKINSUFFDATA) --
+
+Insufficient ephemeris data has been loaded to compute the state of 20000702 relative to 10 (SUN) at the ephemeris epoch 2040 SEP 04 08:20:43.009.
+
+spkezr_c --> SPKEZR --> SPKEZ --> SPKGEO
+
+================================================================================

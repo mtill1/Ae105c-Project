@@ -203,25 +203,42 @@ radii kernel only has BODY499_RADII (planet itself). Functions that need
 both — like `audit_flyby_geometry` — use the explicit `mu_body` /
 `radii_body` fields.)
 
-### Flyby Δv computation — `core.compute_flyby_dv`
+### Flyby Δv computation — `core.compute_flyby_dv`  (ballistic-only)
 
-Wraps `pk.fb_dv` for the energy-matching radial-burn calculation, plus a
-**geometric feasibility gate**:
+Two hard gates before the function returns:
 
 ```python
+# Gate 1 — Ballistic energy conservation. A real gravity assist has
+# |v_inf_in| ≈ |v_inf_out|. We forbid powered flybys (engine burn at
+# periapsis) project-wide.
+if abs(|v_in| - |v_out|) > 0.05 km/s:
+    return 1e3                 # km/s — powered flyby rejected
+
+# Gate 2 — Geometric feasibility of the turn at the safe periapsis altitude.
+# Maximum natural turn is the sum of two half-turns:
 sin_in_max  = 1 / (1 + r_p · v_in² / μ)
 sin_out_max = 1 / (1 + r_p · v_out² / μ)
 δ_max       = arcsin(sin_in_max) + arcsin(sin_out_max)
 if δ_required > δ_max + 1e-6:
-    return 1e3  # km/s — penalty, optimizer steers away
+    return 1e3                 # km/s — turn unreachable at safe altitude
+
+# If both pass, this is a pure ballistic flyby — zero Δv.
+return 0.0
 ```
 
-This catches the case where the required turn angle exceeds the natural
-maximum at the safe periapsis altitude — a bug `pk.fb_dv` doesn't check
-because it only equalizes |v_inf| magnitudes. The patch was added after
-auditing 12 of 15 mass-Pareto top results and finding all 12 had
-geometrically impossible Mars flybys (turn angles 40°–165°, requiring
-periapsis altitudes thousands of km below Mars's surface).
+Why two gates?
+
+- **Gate 1** rejects powered flybys. Earlier versions allowed `pk.fb_dv` to
+  compute a periapsis radial burn that bridges any |v_inf| mismatch — that's
+  not a real "gravity assist", that's a propulsive maneuver near a planet.
+  Project policy: GAs are gravity-only.
+- **Gate 2** catches sub-surface flybys (e.g. an old result claimed a 165°
+  turn at 6 km/s v_inf, which would require a periapsis 3,300 km *below*
+  Mars's surface). `pk.fb_dv` does not check this; we have to.
+
+The constant `BALLISTIC_VINF_TOLERANCE_KMS = 0.05` is the energy-conservation
+tolerance. It's looser than numerical noise but tight enough to forbid any
+meaningful periapsis burn.
 
 ### Mars gravity assist
 Adds a 7th decision variable (Earth → Mars transfer time, 0.3–3 yr) and

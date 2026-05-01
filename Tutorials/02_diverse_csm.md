@@ -75,9 +75,30 @@ solution that turned out to be **non-physical** — the trajectory required the
 spacecraft to dip 3,300 km **below Mars's surface**. The patched optimizer
 rejects such geometries. Real flyable answers are 12–14 km/s, not 9 km/s.
 
+## Pinning specific asteroids to the path
+
+If you want particular asteroids guaranteed in every triplet (e.g. Decadal
+targets like THEMIS or PSYCHE), use the `gcp/run_mars_diverse_science.py`
+runner with environment variables. **Local OK if the search space is small**
+(< 100 candidate triplets):
+
+```bash
+# At least one of THEMIS or PSYCHE must be in the path
+ALPHA=0.4 REQUIRED_ASTEROIDS=THEMIS,PSYCHE \
+  python Python_Consolidated/gcp/run_mars_diverse_science.py
+
+# BOTH THEMIS and PSYCHE must be in the path
+ALPHA=0.4 REQUIRE_ALL_ASTEROIDS=THEMIS,PSYCHE \
+  python Python_Consolidated/gcp/run_mars_diverse_science.py
+```
+
+`ALPHA` blends Δv vs science: 1.0 = pure Δv, 0.7 = 70% Δv + 30% science,
+0.4 = 40% Δv + 60% science.
+
 ## What's next
 
 - **`05_visualize.md`** — render the winner as a 3D GIF
-- **`06_verify_physics.md`** — deep dive into the flyby diagnostics
+- **`06_verify_physics.md`** — `verify` (pass/fail) and `inspect` (full per-leg
+  Lambert/Δv/flyby dump) for any saved trajectory
 - **`03_mass_pareto_gcp.md`** — if you want to also optimize *propellant mass*
   (not just Δv), trade chemical vs. electric across architectures

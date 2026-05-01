@@ -31,8 +31,11 @@ Supports:
 | Optimize 3 specific asteroids you picked | [`Tutorials/04_single_triplet.md`](Tutorials/04_single_triplet.md) |
 | Render a 3D trajectory animation | [`Tutorials/05_visualize.md`](Tutorials/05_visualize.md) |
 | Audit a saved trajectory's flyby physics | [`Tutorials/06_verify_physics.md`](Tutorials/06_verify_physics.md) |
+| Call the optimizer from another program (HTTP API) | [`Tutorials/07_using_the_api.md`](Tutorials/07_using_the_api.md) |
 | Hit an error | [`Tutorials/FAQ.md`](Tutorials/FAQ.md) |
 | Understand the algorithms | [`METHODOLOGY.md`](METHODOLOGY.md) |
+| Read the selected mission concept (PARTHENOPE→PSYCHE→THEMIS, full physics writeup) | [`MISSION_PARTHENOPE_PSYCHE_THEMIS.md`](MISSION_PARTHENOPE_PSYCHE_THEMIS.md) |
+| Constraints + required output specification | [`CONSTRAINTS_AND_OUTPUTS.md`](CONSTRAINTS_AND_OUTPUTS.md) |
 
 ---
 
@@ -51,7 +54,8 @@ Subcommands:
 | `optimize`           | Run trajectory optimization (many flags — see below) |
 | `list`               | List all saved result `.pkl` files |
 | `plot RESULT.pkl`    | Show top entries / render PNG / render GIF |
-| `verify RESULT.pkl`  | Audit a saved trajectory's flyby physics |
+| `verify RESULT.pkl`  | Audit a saved trajectory's flyby physics (pass/fail) |
+| `inspect RESULT.pkl` | Comprehensive per-leg dump: Lambert V1/V2 vectors, Δv vectors, full flyby diagnostics |
 | `rank`               | Rebuild `asteroid_tradeoff.csv` from JPL SBDB data |
 | `animate-asteroids`  | MP4 of all 69 asteroid orbits |
 
@@ -68,6 +72,34 @@ python Python_Consolidated/main.py optimize --pareto       # mass-Pareto across 
 
 ★ `--feasible` is the **recommended** workflow for a publication-quality
 result (it's the only mode that physically verifies every Mars/Moon flyby).
+
+## HTTP API (optional)
+
+Everything above is also exposed as a REST API. Start the server:
+
+```bash
+python -m Python_Consolidated.api
+# → Swagger UI at http://localhost:8000/docs
+```
+
+Then call from any language. Python:
+
+```python
+from Python_Consolidated.api.client import Client
+cli = Client('http://localhost:8000')
+
+# Sync calls (browse + audit)
+cli.list_results()
+cli.inspect('mars_diverse_feasible_73.pkl', rank=1)
+
+# Async optimization
+job = cli.submit_optimize(
+    mode='mars_diverse_science', backend='subprocess',
+    alpha=0.4, require_all_asteroids=['THEMIS', 'PSYCHE'])
+job.wait(progress=True)
+```
+
+Switch `backend='gcp'` to run the same job on a fresh GCP VM (auto-provisioned, deleted after). See [`Tutorials/07_using_the_api.md`](Tutorials/07_using_the_api.md).
 
 ---
 
@@ -87,8 +119,10 @@ Ae105c-Project/
 │   ├── mass_optimization.py # Mass-Pareto across 8 propulsion architectures
 │   ├── visualization.py     # 3D trajectory animation + plotting
 │   ├── tradeoff.py          # Asteroid science scoring
-│   ├── requirements.txt
-│   └── gcp/                 # GCP cloud-runner scripts (3 files)
+│   ├── check_mission.py     # Independent physics verifier (re-derives all Δv)
+│   ├── api/                 # FastAPI HTTP service (server, client, jobs, schemas)
+│   ├── gcp/                 # GCP cloud-runner scripts
+│   └── requirements.txt
 ├── NOTABLE_ASTEROID_BSPs/   # 69 asteroid SPICE ephemerides
 ├── SPICE_BSPs/              # Extended pool (49 BSPs)
 ├── optimal_asteroid_paths/  # Saved optimization results (.pkl)
@@ -117,6 +151,23 @@ chemical burn at periapsis where Oberth efficiency peaks). See
 [`Tutorials/02_diverse_csm.md`](Tutorials/02_diverse_csm.md) for how to
 reproduce.
 
+### Lowest Δv with both PSYCHE and THEMIS (ballistic Mars GA only)
+
+| Rank | Path | Total Δv | Sci sum | Mars turn | Periapsis | Mission |
+|:-:|---|:-:|:-:|:-:|:-:|:-:|
+| **#1** | **ALKESTE [S] → THEMIS [C] → PSYCHE [X/M]** | **18.87 km/s** | **14.42** | 6.1° / 12.1° | 4,147 km | 9.6 yr |
+| #2 | PSYCHE → ALKESTE → THEMIS | 21.63 | 14.42 | 4.4° / 12.3° | 7,478 km | 12.3 yr |
+| #3 | PSYCHE → THEMIS → PARTHENOPE | 22.78 | 14.59 | 2.1° / 11.7° | 18,782 km | 12.0 yr |
+
+Forced both Decadal-survey targets in path; α=0.4 (60% science weighting);
+**ballistic Mars flyby only** (`|v_inf_in| = |v_inf_out|` to within 0.05 km/s).
+13 of 20 audited entries pass both geometric and ballistic checks.
+
+A previous run that allowed powered Mars flybys (Oberth maneuvers at periapsis)
+showed a "PARTHENOPE → PSYCHE → THEMIS at 14.21 km/s" result, but that was
+relying on a 6.7 km/s engine burn at Mars periapsis. Real GAs are gravity-only,
+so we now reject any solution with `|v_inf_in| ≠ |v_inf_out|`.
+
 ### Highest delivered mass (mass-Pareto, single triplet)
 
 | Triplet | Architecture | Δv equivalent | Final mass |
@@ -140,7 +191,8 @@ When you run `optimize`, the search is constrained as follows.
 |---|---|---|
 | 1 | **Mission duration ≤ 14 years** (BSP ephemeris ends ~2050) | Penalty 1000 km/s |
 | 2 | **Flyby turn angle ≤ natural max at the safe periapsis altitude** (Mars 200 km, Moon 100 km, Earth 300 km) | Penalty 1000 km/s |
-| 3 | **Lambert solver must converge on every leg** | Penalty 1000 km/s |
+| 3 | **Ballistic flyby only** — `|v_inf_in| ≈ |v_inf_out|` within 0.05 km/s (no powered burn at periapsis) | Penalty 1000 km/s |
+| 4 | **Lambert solver must converge on every leg** | Penalty 1000 km/s |
 
 The patched `core.compute_flyby_dv` enforces #2 — past results showed the unpatched solver allowed sub-surface flybys (see [`METHODOLOGY.md`](METHODOLOGY.md) §9).
 

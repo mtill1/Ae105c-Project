@@ -1,9 +1,10 @@
-# Tutorial 06 — Audit a saved trajectory's flyby physics
+# Tutorial 06 — Audit and inspect a saved trajectory
 
-**Question this tutorial answers:** is this saved trajectory actually flyable?
-Does its Mars/Moon gravity assist obey the laws of physics?
+**Two related tools:**
+- **`verify`** — pass/fail audit of flyby physics (is this trajectory flyable?)
+- **`inspect`** — comprehensive per-leg dump (Lambert V1/V2 vectors, Δv vectors, full flyby diagnostics)
 
-**Time:** ~30 s. **No GCP required.**
+**Time:** ~30 s each. **No GCP required.**
 
 ## Why this matters
 
@@ -55,12 +56,58 @@ Flyby audit — VIRGINIA -> PSYCHE -> PARTHENOPE  via moon
 
 ## How to interpret the result
 
+A valid (feasible) flyby must pass **both** checks:
+1. **Geometric:** turn angle ≤ natural max at safe periapsis (no sub-surface flyby)
+2. **Ballistic:** `|v_inf_in| ≈ |v_inf_out|` within 0.05 km/s (no powered burn at periapsis)
+
 | What you see | What it means |
 |---|---|
-| `FEASIBLE`, periapsis altitude > 200 km buffer | ✅ comfortable margin, real-world flyable |
-| `FEASIBLE`, altitude ≈ minimum | ⚠️ right at the limit. Optimizer pushed against the constraint. Will need re-tuning for navigation tolerances in real ops. |
-| `INFEASIBLE` | ✗ trajectory requires going through the body's surface. Don't trust the optimization result. |
+| `FEASIBLE`, both checks OK, periapsis > 200 km buffer | ✅ comfortable margin, real-world flyable |
+| `FEASIBLE`, both checks OK, altitude ≈ minimum | ⚠️ right at the geometric limit. Will need re-tuning for navigation tolerances in real ops. |
+| `INFEASIBLE` (geometric) | ✗ trajectory requires going through the body's surface. |
+| `INFEASIBLE` (ballistic, large `|v_inf|` residual) | ✗ Mars/Moon would need a large powered Δv at periapsis. Not a real GA. |
 | `lambert_fail` | Optimizer's saved epochs don't produce a converged Lambert solution. The pkl may be corrupt. |
+
+## `inspect` — full per-leg dump
+
+For mission-design-level detail (every Lambert velocity vector, every Δv as a
+3-component vector, full flyby diagnostics), use:
+
+```bash
+python Python_Consolidated/main.py inspect <pkl_file> [--rank N]
+```
+
+Example (the PARTHENOPE → PSYCHE → THEMIS winner):
+
+```bash
+python Python_Consolidated/main.py inspect mars_diverse_science_a40_all_PSYCHE_THEMIS.pkl --rank 1
+```
+
+What you get (per leg):
+- TOF in days and years, Lambert m-revs
+- Body velocity vector at start (heliocentric)
+- Lambert V1 (departure) vector
+- Δv at departure (vector + magnitude)
+- Lambert V2 (arrival) vector
+- Body velocity vector at end
+- Δv at arrival (vector + magnitude)
+
+For the flyby leg (Mars or Moon):
+- Full v_inf_in and v_inf_out vectors (heliocentric ECLIPJ2000)
+- Magnitudes and energy residual (ballistic vs powered classification)
+- Required turn angle and the natural maximum at safe periapsis
+- Turn margin in degrees and percent
+- Periapsis altitude
+
+Plus a per-burn Δv breakdown table summing to the saved total.
+
+This is what you'd put in a mission-design report or a PDR slide.
+
+Inspect top 5 at once:
+
+```bash
+python Python_Consolidated/main.py inspect <pkl> --top 5
+```
 
 ## Bulk-audit a whole result file
 

@@ -403,7 +403,8 @@ def _normalize_entries(data):
         return entries
 
     if isinstance(data, dict) and 'audited' in data:
-        # diverse_top3_feasible format from `optimize --feasible`
+        # diverse_top3_feasible / mars_diverse_* format. Preserve saved order
+        # (the file may be sorted by combined score, not Δv).
         for a in data['audited']:
             best = a.get('best') or {}
             audit = a.get('audit') or {}
@@ -414,12 +415,13 @@ def _normalize_entries(data):
                            'arch': a.get('arch'),
                            'flyby_name': a.get('arch'),
                            'audit': audit},
-                'score': float(best.get('delta_v_total', 1e3)),
+                'score': float(a.get('combined',
+                                      best.get('delta_v_total', 1e3))),
                 'label': (f"dv_total={best.get('delta_v_total', 0):.2f} km/s  "
                           f"arch={a.get('arch')}  "
                           f"feas={'OK' if audit.get('feasible') else 'FAIL'}"),
             })
-        entries.sort(key=lambda e: e['score'])
+        # Don't re-sort — saved 'rank' field is the authority for ordering
         return entries
 
     if isinstance(data, dict) and 'best_verified' in data:
@@ -834,6 +836,205 @@ def cmd_verify(args):
 
 
 # ---------------------------------------------------------------------------
+# Subcommand: inspect — comprehensive per-leg dump (Lambert V1/V2, Δv vectors,
+# flyby v_inf vectors, periapsis altitude, full breakdown)
+# ---------------------------------------------------------------------------
+
+def cmd_inspect(args):
+    """Dump every detail of a saved trajectory: per-leg Lambert velocities,
+    per-burn Δv vectors, flyby diagnostics, and full timing."""
+    _setup_repo_root()
+    from core import (audit_flyby_geometry, get_id_from_asteroid_name,
+                       get_state, solve_lambert, MU_SUN, DAY, YEAR)
+    from optimization import FLYBY_BODIES
+    import spiceypy
+
+    pkl_path = (args.pkl if os.path.isabs(args.pkl)
+                else os.path.join(DEFAULT_PKL_DIR, args.pkl))
+    if not os.path.exists(pkl_path):
+        sys.exit(f"Not found: {pkl_path}")
+    with open(pkl_path, 'rb') as f:
+        data = pickle.load(f)
+
+    entries = _normalize_entries(data)
+    if args.rank is not None:
+        if args.rank < 1 or args.rank > len(entries):
+            sys.exit(f"--rank {args.rank} out of range (1..{len(entries)})")
+        targets = [entries[args.rank - 1]]
+    elif args.names:
+        wanted = tuple(n.upper() for n in args.names)
+        targets = [e for e in entries if tuple(e['names']) == wanted]
+        if not targets:
+            sys.exit(f"No entry with names {wanted}")
+    elif args.top:
+        targets = entries[:args.top]
+    else:
+        targets = [entries[0]]
+
+    asteroid_list = _load_asteroids(args.bsp, args.kernels)
+    name_to_id = {a['NAME'].upper(): str(int(a['ID'])) for a in asteroid_list}
+
+    def fvec(v, units='km/s', width=10):
+        return f'[{v[0]:+{width}.4f}, {v[1]:+{width}.4f}, {v[2]:+{width}.4f}] {units}'
+
+    for entry in targets:
+        names = [n.upper() for n in entry['names']]
+        res = entry['result']
+        arch = res.get('arch') or res.get('flyby_name') or 'mars'
+        a_ids = [name_to_id.get(n) for n in names]
+
+        print('\n' + '=' * 86)
+        print(f' INSPECT: {" → ".join(names)}  via {arch}')
+        print('=' * 86)
+
+        if any(x is None for x in a_ids):
+            print(f'  ERROR: cannot resolve asteroid IDs: {names}')
+            continue
+
+        et_launch = res['et_launch']
+        et_flyby  = res.get('et_flyby')
+        et_arr_1  = res['et_arrive_1']
+        et_stay_1 = res['et_stay_1']
+        et_arr_2  = res['et_arrive_2']
+        et_stay_2 = res['et_stay_2']
+        et_arr_3  = res['et_arrive_3']
+        m_revs    = res.get('m_revs', (0, 0, 0, 0))
+
+        print('\n--- Mission Timeline ---')
+        print(f'  Launch (Earth)        : {spiceypy.et2utc(et_launch, "C", 0)}')
+        if et_flyby:
+            print(f'  {arch.title()} flyby           '
+                  f': {spiceypy.et2utc(et_flyby,  "C", 0)}')
+        print(f'  Arrive {names[0]:11s}    : {spiceypy.et2utc(et_arr_1,  "C", 0)}')
+        print(f'  Depart {names[0]:11s}    : {spiceypy.et2utc(et_stay_1, "C", 0)}')
+        print(f'  Arrive {names[1]:11s}    : {spiceypy.et2utc(et_arr_2,  "C", 0)}')
+        print(f'  Depart {names[1]:11s}    : {spiceypy.et2utc(et_stay_2, "C", 0)}')
+        print(f'  Arrive {names[2]:11s}    : {spiceypy.et2utc(et_arr_3,  "C", 0)}')
+        print(f'  Total mission         : {(et_arr_3-et_launch)/YEAR:.3f} yr')
+        print(f'  Lambert m-revs        : (E→fb={m_revs[0]}, fb→A1={m_revs[1]},'
+              f' A1→A2={m_revs[2]}, A2→A3={m_revs[3]})')
+
+        # --- Per-leg Lambert verification ---
+        print('\n--- Per-Leg Lambert Solution ---')
+
+        earth_r,  earth_v  = get_state('399', et_launch)
+        a1_arr_r, a1_arr_v = get_state(a_ids[0], et_arr_1)
+        a1_lv_r,  a1_lv_v  = get_state(a_ids[0], et_stay_1)
+        a2_arr_r, a2_arr_v = get_state(a_ids[1], et_arr_2)
+        a2_lv_r,  a2_lv_v  = get_state(a_ids[1], et_stay_2)
+        a3_arr_r, a3_arr_v = get_state(a_ids[2], et_arr_3)
+        if et_flyby:
+            fb_r, fb_v = get_state(FLYBY_BODIES[arch]['id'], et_flyby)
+
+        legs = []
+        if et_flyby:
+            legs.append(('Earth → ' + arch.title(),
+                          earth_r, earth_v, fb_r, fb_v,
+                          et_launch, et_flyby, m_revs[0], 'launch'))
+            legs.append((f'{arch.title()} → {names[0]}',
+                          fb_r, fb_v, a1_arr_r, a1_arr_v,
+                          et_flyby, et_arr_1, m_revs[1], 'cruise'))
+        else:
+            legs.append((f'Earth → {names[0]}',
+                          earth_r, earth_v, a1_arr_r, a1_arr_v,
+                          et_launch, et_arr_1, m_revs[0], 'launch'))
+        legs.append((f'{names[0]} → {names[1]}',
+                      a1_lv_r, a1_lv_v, a2_arr_r, a2_arr_v,
+                      et_stay_1, et_arr_2, m_revs[2], 'cruise'))
+        legs.append((f'{names[1]} → {names[2]}',
+                      a2_lv_r, a2_lv_v, a3_arr_r, a3_arr_v,
+                      et_stay_2, et_arr_3, m_revs[3], 'cruise'))
+
+        for i, (label, r0, v0_b, r1, v1_b, et0, et1, mrev, kind) in enumerate(legs, 1):
+            tof = (et1 - et0) / DAY
+            V1, V2, ef = solve_lambert(r0, r1, tof, mrev, MU_SUN)
+            print(f'\n  [Leg {i}] {label}')
+            print(f'    TOF                   : {tof:.2f} d  ({tof/365.25:.3f} yr)'
+                  f'   m_revs = {mrev}')
+            print(f'    Body v at start       : {fvec(v0_b)}')
+            print(f'    Lambert V1 (depart)   : {fvec(V1)}')
+            dv_dep = V1 - v0_b
+            print(f'    Δv at departure       : {fvec(dv_dep)}')
+            print(f'    |Δv| at departure     : {np.linalg.norm(dv_dep):.4f} km/s')
+            print(f'    Lambert V2 (arrive)   : {fvec(V2)}')
+            print(f'    Body v at end         : {fvec(v1_b)}')
+            dv_arr = v1_b - V2
+            print(f'    Δv at arrival         : {fvec(dv_arr)}')
+            print(f'    |Δv| at arrival       : {np.linalg.norm(dv_arr):.4f} km/s')
+
+        # --- Flyby physics ---
+        if arch != 'direct' and et_flyby:
+            print(f'\n--- {arch.title()} Gravity Assist Diagnostics ---')
+            audit = audit_flyby_geometry(et_launch, et_flyby, et_arr_1,
+                                          a_ids[0], arch)
+            v_in  = audit['v_inf_in_vec']
+            v_out = audit['v_inf_out_vec']
+            print(f'  v_inf_in  vector      : {fvec(v_in)}')
+            print(f'  v_inf_out vector      : {fvec(v_out)}')
+            print(f'  |v_inf_in|            : {audit["v_inf_in_kms"]:.4f} km/s')
+            print(f'  |v_inf_out|           : {audit["v_inf_out_kms"]:.4f} km/s')
+            print(f'  Energy residual       : {audit["energy_residual_kms"]:+.4f}'
+                  f' km/s   '
+                  f'({"powered" if abs(audit["energy_residual_kms"])>0.5 else "ballistic"})')
+            print(f'  Turn angle (required) : {audit["turn_angle_deg"]:.3f}°')
+            print(f'  Turn angle (max)      : {audit["turn_max_deg"]:.3f}°  '
+                  f'(at safe periapsis)')
+            margin = audit['turn_max_deg'] - audit['turn_angle_deg']
+            print(f'  Turn margin           : {margin:.3f}°  '
+                  f'({100*margin/audit["turn_max_deg"]:.1f}% headroom)')
+            print(f'  Periapsis altitude    : {audit["periapsis_alt_km"]:,.0f} km'
+                  f'  (min: {audit["safe_periapsis_alt_km"]} km, '
+                  f'body radius: {audit["body_radius_km"]:.0f} km)')
+            powered_dv = abs(float(res.get('delta_v_flyby', 0.0)))
+            print(f'  Powered Δv (saved)    : {powered_dv:.4f} km/s')
+            print(f'  Feasibility           : '
+                  f'{"OK" if audit["feasible"] else "FAIL"}')
+
+        # --- Δv breakdown summary ---
+        print('\n--- Δv Breakdown Summary ---')
+        components = [
+            ('Earth launch (departure)',
+              np.linalg.norm(res.get('delta_v_launch', np.zeros(3)))),
+            (f'{arch.title()} flyby (powered)',
+              abs(float(res.get('delta_v_flyby', 0.0))) if arch != 'direct' else None),
+            (f'Arrive {names[0]}',
+              np.linalg.norm(res.get('delta_v_A1_arrive', np.zeros(3)))),
+            (f'Depart {names[0]}',
+              np.linalg.norm(res.get('delta_v_A1_leave',  np.zeros(3)))),
+            (f'Arrive {names[1]}',
+              np.linalg.norm(res.get('delta_v_A2_arrive', np.zeros(3)))),
+            (f'Depart {names[1]}',
+              np.linalg.norm(res.get('delta_v_A2_leave',  np.zeros(3)))),
+            (f'Arrive {names[2]}',
+              np.linalg.norm(res.get('delta_v_A3_arrive', np.zeros(3)))),
+        ]
+        total = 0.0
+        for name, val in components:
+            if val is None:
+                continue
+            print(f'  {name:30s}: {val:7.4f} km/s')
+            total += val
+        print(f'  {"-"*30}  -------')
+        print(f'  {"Sum":30s}: {total:7.4f} km/s')
+        if 'delta_v_total' in res:
+            saved = float(res['delta_v_total'])
+            print(f'  {"Saved Δv total":30s}: {saved:7.4f} km/s   '
+                  f'(diff {abs(saved-total):.4f})')
+
+        # --- Audit metadata if present ---
+        audit_saved = entry.get('audit_saved') or res.get('audit')
+        if isinstance(audit_saved, dict) and audit_saved:
+            print('\n--- Saved Audit Metadata ---')
+            for k, v in audit_saved.items():
+                if isinstance(v, list):
+                    print(f'  {k:25s}: {fvec(v) if len(v)==3 else v}')
+                elif isinstance(v, float):
+                    print(f'  {k:25s}: {v:.4f}')
+                else:
+                    print(f'  {k:25s}: {v}')
+
+
+# ---------------------------------------------------------------------------
 # Argparse
 # ---------------------------------------------------------------------------
 
@@ -935,6 +1136,21 @@ def build_parser():
                    help='Audit the entry with these three asteroid names')
     _add_kernels_args(v)
     v.set_defaults(func=cmd_verify)
+
+    # inspect
+    ins = sub.add_parser('inspect',
+                          help='Comprehensive per-leg dump of a saved trajectory '
+                               '(Lambert V1/V2, Δv vectors, flyby diagnostics)')
+    ins.add_argument('pkl', help='Path to result pkl (or basename in pkl/)')
+    ins.add_argument('--rank', type=int, default=None,
+                     help='Rank to inspect (1=best).')
+    ins.add_argument('--names', nargs=3, default=None,
+                     metavar=('A', 'B', 'C'),
+                     help='Inspect the entry with these three asteroid names')
+    ins.add_argument('--top', type=int, default=None,
+                     help='Inspect top N entries')
+    _add_kernels_args(ins)
+    ins.set_defaults(func=cmd_inspect)
 
     return p
 

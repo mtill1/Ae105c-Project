@@ -6,3 +6,9 @@ matplotlib
 tqdm
 pandas
 imageio
+
+# API server (optional — only needed for `python -m api`)
+fastapi
+uvicorn[standard]
+pydantic>=2
+httpx

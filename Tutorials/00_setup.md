@@ -112,4 +112,5 @@ Pick a tutorial:
 - **`04_single_triplet.md`** — deeply optimize 3 specific asteroids you picked
 - **`05_visualize.md`** — render any saved trajectory as a 3D GIF
 - **`06_verify_physics.md`** — audit a saved solution's flyby physics
+- **`07_using_the_api.md`** — call everything over HTTP (curl, Python, MATLAB, …)
 - **`FAQ.md`** — common errors and answers
