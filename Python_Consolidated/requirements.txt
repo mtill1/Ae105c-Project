@@ -5,4 +5,5 @@ spiceypy
 matplotlib
 tqdm
 pandas
+tabulate
 imageio

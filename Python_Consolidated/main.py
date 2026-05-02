@@ -876,8 +876,8 @@ def build_parser():
     o.add_argument('--flyby', default='mars',
                    choices=['mars', 'moon', 'earth'],
                    help='Flyby body for --pareto (default: mars)')
-    o.add_argument('--m-init', type=float, default=1500.0,
-                   help='Initial spacecraft mass kg (default: 1500)')
+    o.add_argument('--m-init', type=float, default=3000.0,
+                   help='Initial spacecraft mass kg (default: 3000)')
     o.add_argument('--thrust', type=float, default=0.30,
                    help='Continuous thrust N (default: 0.30)')
     o.add_argument('--tradeoff-csv', default=DEFAULT_TRADEOFF)

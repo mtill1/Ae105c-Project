@@ -1,7 +1,16 @@
 """Create presentation-ready plots for the exported low-thrust mission data."""
 
 import os
+import sys
+import argparse
+from pathlib import Path
+
+_PC_ROOT = Path(__file__).resolve().parent.parent
+if str(_PC_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PC_ROOT))
 import pandas as pd
+
+from results_artifacts import optimal_asteroid_dir
 import matplotlib.pyplot as plt
 
 
@@ -22,14 +31,20 @@ def add_event_lines(ax, events_days):
 
 
 def main():
-    repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    csv_dir = os.path.join(repo, "optimal_asteroid_paths", "csv")
-    out_dir = os.path.join(repo, "optimal_asteroid_paths", "plots")
+    parser = argparse.ArgumentParser(description="Plot low-thrust CSV outputs.")
+    parser.add_argument("--stem", default="aegina_beatrix_vesta",
+                        help="Filename stem (e.g. amphitrite_peraga_psyche).")
+    args = parser.parse_args()
+
+    repo = str(Path(__file__).resolve().parent.parent.parent)
+    oap = optimal_asteroid_dir(repo)
+    csv_dir = oap
+    out_dir = os.path.join(oap, "plots")
     os.makedirs(out_dir, exist_ok=True)
 
-    thrust_path = os.path.join(csv_dir, "aegina_beatrix_vesta_low_thrust_profile.csv")
-    states_path = os.path.join(csv_dir, "aegina_beatrix_vesta_multibody_states.csv")
-    summary_path = os.path.join(csv_dir, "aegina_beatrix_vesta_low_thrust_summary.csv")
+    thrust_path = os.path.join(csv_dir, f"{args.stem}_low_thrust_profile.csv")
+    states_path = os.path.join(csv_dir, f"{args.stem}_multibody_states.csv")
+    summary_path = os.path.join(csv_dir, f"{args.stem}_low_thrust_summary.csv")
 
     thrust = pd.read_csv(thrust_path)
     states = pd.read_csv(states_path)
@@ -41,16 +56,18 @@ def main():
 
     # Mission event markers relative to low-thrust start (Aegina departure)
     event_utc = [
-        ("Mars Flyby", summary["mars_flyby_utc"]),
-        ("Aegina Arrive", summary["aegina_arrive_utc"]),
-        ("Aegina Depart", summary["aegina_depart_utc"]),
-        ("Beatrix Arrive", summary["beatrix_arrive_utc"]),
-        ("Beatrix Depart", summary["beatrix_depart_utc"]),
-        ("Vesta Arrive", summary["vesta_arrive_utc"]),
+        ("Flyby", summary.get("flyby_utc", "")),
+        ("A1 Arrive", summary["a1_arrive_utc"]),
+        ("A1 Depart", summary["a1_depart_utc"]),
+        ("A2 Arrive", summary["a2_arrive_utc"]),
+        ("A2 Depart", summary["a2_depart_utc"]),
+        ("A3 Arrive", summary["a3_arrive_utc"]),
     ]
     t0_utc = pd.to_datetime(thrust["utc"].iloc[0], format="%Y %b %d %H:%M:%S.%f")
     events_days = []
     for label, utc in event_utc:
+        if str(utc).strip() == "":
+            continue
         event_ts = pd.to_datetime(str(utc), format="%Y %b %d %H:%M:%S")
         events_days.append((label, (event_ts - t0_utc).total_seconds() / 86400.0))
 

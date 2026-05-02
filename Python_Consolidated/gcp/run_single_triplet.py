@@ -67,7 +67,8 @@ if __name__ == '__main__':
     et_max = spiceypy.str2et('Dec 31 12:00:00 UTC 2035')
     launch_range = [et_min, et_max]
 
-    M_INIT_KG = 1500.0
+    from lowthrust import DEFAULT_M_INIT_KG
+    M_INIT_KG = DEFAULT_M_INIT_KG
     THRUST_N  = 0.30
     FLYBY     = 'mars'
     ARCHS = ['CCC','CCE','CEC','CEE','ECC','ECE','EEC','EEE']
@@ -163,12 +164,12 @@ if __name__ == '__main__':
         print(f' BEST: {" -> ".join(triplet)} via {FLYBY} flyby, arch={best_verified["arch_code"]}',
               flush=True)
         print(f'{"="*90}', flush=True)
-        print(f'  Verified delivered mass: {best_verified["verified_m_final_kg"]:.1f} kg / 1500 kg',
+        print(f'  Verified delivered mass: {best_verified["verified_m_final_kg"]:.1f} kg / {M_INIT_KG:.0f} kg',
               flush=True)
         print(f'  Verified Δv-equivalent : {best_verified["verified_dv_equiv_kms"]:.2f} km/s',
               flush=True)
         print(f'  Propellant fraction    : '
-              f'{(1 - best_verified["verified_m_final_kg"]/1500)*100:.1f}%', flush=True)
+              f'{(1 - best_verified["verified_m_final_kg"]/M_INIT_KG)*100:.1f}%', flush=True)
         print(f'  Launch                 : {spiceypy.et2utc(best_verified["et_launch"], "C", 0)}',
               flush=True)
         print(f'  Mars flyby             : {spiceypy.et2utc(best_verified["et_flyby"], "C", 0)}',

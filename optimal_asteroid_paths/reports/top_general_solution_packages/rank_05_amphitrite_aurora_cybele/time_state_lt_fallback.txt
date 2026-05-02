@@ -1,0 +1,12 @@
+
+================================================================================
+
+Toolkit version: CSPICE_N0067
+
+SPICE(SPKINSUFFDATA) --
+
+Insufficient ephemeris data has been loaded to compute the state of 499 (MARS) relative to 10 (SUN) at the ephemeris epoch 2034 SEP 05 13:20:13.550.
+
+spkezr_c --> SPKEZR --> SPKEZ --> SPKGEO
+
+================================================================================

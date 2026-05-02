@@ -23,8 +23,8 @@ G0 = 9.80665
 ISP_CHEM = 320.0
 ISP_ELEC = 3100.0
 
-# Default spacecraft (Dawn-like)
-DEFAULT_M_INIT_KG = 1500.0
+# Default spacecraft wet mass at Earth departure
+DEFAULT_M_INIT_KG = 3000.0
 DEFAULT_THRUST_N  = 0.30
 MAX_THRUST_N      = 0.30  # 300 mN hard cap
 DEFAULT_NSEG      = 15

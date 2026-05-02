@@ -139,8 +139,8 @@ if __name__ == '__main__':
     et_max = spiceypy.str2et('Dec 31 12:00:00 UTC 2035')
     launch_range = [et_min, et_max]
 
-    # Spacecraft params (Dawn-like)
-    M_INIT_KG = 1500.0
+    from lowthrust import DEFAULT_M_INIT_KG
+    M_INIT_KG = DEFAULT_M_INIT_KG
     THRUST_N  = 0.30
     FLYBY     = 'mars'   # the EGA-real seed pool uses Mars GA
 
