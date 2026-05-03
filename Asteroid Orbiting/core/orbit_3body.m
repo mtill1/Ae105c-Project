@@ -11,6 +11,7 @@ function dxdt = dx_dt_3body(et, x_vec, asteroid, myu_aster)
     dxdt = 0 .* x_vec;
 
     r_asteroid = norm(r_sc_rel_aster);
+    
     dxdt(1:3) = x_vec(4:6); % Position derivatives
     dxdt(4:6) = - myu_aster .* r_sc_rel_aster ./ (r_asteroid.^3) - ...
         myu_sun .* x_vec(1:3) ./ (norm(x_vec(1:3)).^3);

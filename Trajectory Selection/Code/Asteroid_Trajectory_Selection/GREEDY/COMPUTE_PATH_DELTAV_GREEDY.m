@@ -57,7 +57,7 @@ function [dv_launch, dv_arrive, dv_goal, dv_total, LAMBERT_LAUNCH, ...
     ARRIVE_STATE = cspice_spkezr(char(landing_body), arrival_date, 'ECLIPJ2000', 'NONE', '10');
     GOAL_STATE = cspice_spkezr(char(goal_body), goal_date, 'ECLIPJ2000', 'NONE', '10');
     
-    HEIGHT_THRESHOLD = 100; % km
+    HEIGHT_THRESHOLD = 50; % km
 
 
 
