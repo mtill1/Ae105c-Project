@@ -41,8 +41,12 @@ from core import (load_kernels, get_state, get_id_from_asteroid_name,
                    MU_SUN, DAY, MONTH, YEAR)
 
 
-PKL_PATH = 'optimal_asteroid_paths/pkl/ppt_lt_chain_v2.pkl'
-REPORT_PATH = 'docs/verification_ppt_lt_chain.md'
+_DEFAULT_PKL = 'optimal_asteroid_paths/pkl/ppt_lt_chain_v2.pkl'
+_DEFAULT_REPORT = 'docs/verification_ppt_lt_chain.md'
+
+# CLI: python verify_ppt_lt_chain_full.py [PKL_PATH] [REPORT_PATH]
+PKL_PATH = sys.argv[1] if len(sys.argv) > 1 else _DEFAULT_PKL
+REPORT_PATH = sys.argv[2] if len(sys.argv) > 2 else _DEFAULT_REPORT
 
 G0 = 9.80665
 
@@ -156,15 +160,22 @@ def main():
     s1 = add_section('1. Data integrity')
 
     s1.check('top-level pkl is a dict', isinstance(data, dict))
-    for k in ['best_ordering', 'best_flyby', 'verified', 'config', 'surrogate']:
+    # Accept either v2 schema ('best_ordering'/'best_flyby') or close-approach
+    # schema ('ordering'/'flyby').
+    has_v2_keys = 'best_ordering' in data
+    has_ca_keys = 'ordering' in data
+    s1.check("ordering key present (best_ordering or ordering)",
+              has_v2_keys or has_ca_keys)
+    for k in ['verified', 'config', 'surrogate']:
         s1.check(f"key '{k}' present", k in data)
 
-    triplet = data.get('best_ordering', [])
+    triplet = data.get('best_ordering') or data.get('ordering') or []
+    flyby = data.get('best_flyby') if has_v2_keys else data.get('flyby')
     s1.check('triplet has 3 names', len(triplet) == 3,
               f'got {triplet}')
-    s1.check("best_flyby is None (direct architecture)",
-              data.get('best_flyby') is None,
-              f'flyby = {data.get("best_flyby")}')
+    s1.check("flyby is None (direct architecture)",
+              flyby is None,
+              f'flyby = {flyby}')
 
     v = data.get('verified', {})
     cfg = data.get('config', {})
@@ -550,7 +561,7 @@ def main():
 
 def write_md_report(data, integration_results):
     """Write the full audit report to docs/verification_ppt_lt_chain.md."""
-    triplet = data['best_ordering']
+    triplet = data.get('best_ordering') or data.get('ordering')
     v = data['verified']
     cfg = data['config']
     eps = v['epochs']

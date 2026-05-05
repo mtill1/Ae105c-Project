@@ -58,7 +58,7 @@ Minimize **post-launch mission Δv** (`dv_after_launch_km_s`):
 | Leg type | Lower bound | Upper bound |
 |---|---|---|
 | Earth → flyby body (Mars window) | 0.3 yr | 3.0 yr |
-| Each LT transfer leg TOF | **2 years** (prevents engine saturation) | min(8 yr, mission_max/4) |
+| Each LT transfer leg TOF | **1 year** (SF solver handles short legs; engine non-saturating in practice) | min(8 yr, mission_max/4) |
 | Stay duration at each asteroid | **3 months** | 1 year |
 
 ### Composition diversity
@@ -329,6 +329,6 @@ Before trusting any result, confirm ALL of the following:
 | 4 | All LT legs converged (pos_err < 1.5×10⁶ km, vel_err < 0.15 km/s) | `verify_lt_chain_full()` |
 | 5 | Mission duration ≤ 30 yr | Epoch difference |
 | 6 | Each stay ≥ 3 months | Epoch difference |
-| 7 | Each LT leg TOF ≥ 2 years | Epoch difference |
+| 7 | Each LT leg TOF ≥ 1 year | Epoch difference |
 | 8 | Δv breakdown sums correctly | Compare sum of legs to reported total |
 | 9 | Mass chain consistent (Tsiolkovsky at Isp 3100 s) | Manual or `check_mission.py` |

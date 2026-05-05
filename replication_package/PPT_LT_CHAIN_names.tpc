@@ -1,0 +1,14 @@
+KPL/PCK
+
+\begindata
+
+NAIF_BODY_NAME += ( 'PPT-LT-CHAIN' )
+NAIF_BODY_CODE += ( -1029 )
+
+\begintext
+
+Custom spacecraft name registration for the
+PARTHENOPE -> PSYCHE -> THEMIS LT-chain trajectory.
+After furnishing this file alongside PPT_LT_CHAIN_trajectory.bsp,
+you can use either the name "PPT-LT-CHAIN" or the integer ID
+-1029 when calling spkezr / spkpos / etc.

@@ -25,8 +25,12 @@ from core import (load_kernels, get_state, solve_lambert,
                    propagate_two_body, MU_SUN, DAY, YEAR,
                    get_id_from_asteroid_name)
 
-PKL = 'optimal_asteroid_paths/pkl/ppt_lt_chain_v2.pkl'
-OUT = 'Renders/ppt_lt_chain_trajectory.gif'
+_DEFAULT_PKL = 'optimal_asteroid_paths/pkl/ppt_lt_chain_v2.pkl'
+_DEFAULT_OUT = 'Renders/ppt_lt_chain_trajectory.gif'
+
+# CLI: python plot_ppt_lt_chain_gif.py [PKL_PATH] [OUT_GIF]
+PKL = sys.argv[1] if len(sys.argv) > 1 else _DEFAULT_PKL
+OUT = sys.argv[2] if len(sys.argv) > 2 else _DEFAULT_OUT
 
 N_FRAMES = 240
 FPS      = 24
@@ -81,7 +85,7 @@ def main():
     with open(PKL, 'rb') as f:
         data = pickle.load(f)
 
-    triplet = data['best_ordering']
+    triplet = data.get('best_ordering') or data.get('ordering')
     v = data['verified']
     cfg = data['config']
     a_ids = [str(int(get_id_from_asteroid_name(asteroid_list, n))) for n in triplet]

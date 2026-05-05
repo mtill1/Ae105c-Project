@@ -1,0 +1,176 @@
+Loaded 73 asteroids
+Launch FIXED at 2029 JUL 28 21:06:34
+Target Themis arrival: 2041 APR 25 15:09:19
+  (Psyche-Themis close approach: 0.144 AU sep, 4.21 km/s v_rel)
+Soft window: ±1.5 yr
+Ordering: PARTHENOPE → PSYCHE → THEMIS (direct)
+
+Config:
+  spacecraft_launch_mass_kg     : 3000.0
+  lt_chain_initial_mass_kg      : 1500.0
+  isp_elec_s                    : 3100.0
+  thrust_N                      : 0.3
+  launch_dv_max_kms             : 7.0
+  mission_max_yr                : 30.0
+  stay_min_months               : 3.0
+  lt_leg_min_yr                 : 1.0
+  lt_nseg                       : 15
+  de_maxiter                    : 600
+  de_popsize                    : 30
+  de_seeds                      : (13, 42, 91, 137, 314, 808, 2024, 7777, 12345, 99)
+  de_m_revs                     : ((0, 0, 0), (1, 0, 0), (0, 1, 0), (0, 0, 1), (1, 1, 0), (1, 0, 1), (0, 1, 1), (1, 1, 1))
+
+Decision-vector bounds (years):
+  launch_offset     : [0.000, 0.003]
+  tof_E→A1          : [1.000, 7.500]
+  stay_A1           : [0.250, 1.000]
+  tof_A1→A2         : [1.000, 7.500]
+  stay_A2           : [0.250, 1.000]
+  tof_A2→A3         : [1.000, 7.500]
+
+=== Running DE (8 m_revs × 10 seeds = 80 runs) ===
+
+  m=(0, 0, 0) seed=   13  infeasible (launch_dv 9.19 > 7.0)  score=1219.12  (2s)
+  m=(0, 0, 0) seed=   42  infeasible (launch_dv 9.19 > 7.0)  score=1219.12  (1s)
+  m=(0, 0, 0) seed=   91  infeasible (launch_dv 9.19 > 7.0)  score=1219.12  (1s)
+  m=(0, 0, 0) seed=  137  infeasible (launch_dv 9.19 > 7.0)  score=1219.12  (1s)
+  m=(0, 0, 0) seed=  314  infeasible (launch_dv 9.19 > 7.0)  score=1219.12  (1s)
+  m=(0, 0, 0) seed=  808  infeasible (launch_dv 9.19 > 7.0)  score=1219.12  (2s)
+  m=(0, 0, 0) seed= 2024  infeasible (launch_dv 9.19 > 7.0)  score=1219.12  (1s)
+  m=(0, 0, 0) seed= 7777  infeasible (launch_dv 9.19 > 7.0)  score=1219.12  (1s)
+  m=(0, 0, 0) seed=12345  infeasible (launch_dv 9.19 > 7.0)  score=1219.12  (2s)
+  m=(0, 0, 0) seed=   99  infeasible (launch_dv 9.19 > 7.0)  score=1219.12  (1s)
+  m=(1, 0, 0) seed=   13  launch_dv=7.00  post_dv=21.778  arr=2041 MAR 15 19:02:37  tof_A2A3=4.13yr  (7s)
+  m=(1, 0, 0) seed=   42  launch_dv=7.00  post_dv=21.778  arr=2041 MAR 15 18:56:50  tof_A2A3=4.13yr  (6s)
+  m=(1, 0, 0) seed=   91  launch_dv=7.00  post_dv=21.778  arr=2041 MAR 15 18:29:24  tof_A2A3=4.13yr  (7s)
+  m=(1, 0, 0) seed=  137  launch_dv=7.00  post_dv=21.778  arr=2041 MAR 15 18:58:29  tof_A2A3=4.13yr  (8s)
+  m=(1, 0, 0) seed=  314  launch_dv=7.00  post_dv=21.778  arr=2041 MAR 15 18:22:01  tof_A2A3=4.13yr  (7s)
+  m=(1, 0, 0) seed=  808  launch_dv=7.00  post_dv=21.778  arr=2041 MAR 15 19:10:35  tof_A2A3=4.13yr  (7s)
+  m=(1, 0, 0) seed= 2024  launch_dv=7.00  post_dv=21.778  arr=2041 MAR 15 18:40:27  tof_A2A3=4.13yr  (7s)
+  m=(1, 0, 0) seed= 7777  launch_dv=7.00  post_dv=21.778  arr=2041 MAR 15 19:20:50  tof_A2A3=4.13yr  (8s)
+  m=(1, 0, 0) seed=12345  launch_dv=7.00  post_dv=21.778  arr=2041 MAR 15 19:29:47  tof_A2A3=4.13yr  (7s)
+  m=(1, 0, 0) seed=   99  launch_dv=7.00  post_dv=21.778  arr=2041 MAR 15 18:35:18  tof_A2A3=4.13yr  (7s)
+  m=(0, 1, 0) seed=   13  infeasible (launch_dv 9.19 > 7.0)  score=1219.12  (2s)
+  m=(0, 1, 0) seed=   42  infeasible (launch_dv 9.19 > 7.0)  score=1219.12  (1s)
+  m=(0, 1, 0) seed=   91  infeasible (launch_dv 9.19 > 7.0)  score=1219.12  (1s)
+  m=(0, 1, 0) seed=  137  infeasible (launch_dv 9.19 > 7.0)  score=1219.12  (2s)
+  m=(0, 1, 0) seed=  314  infeasible (launch_dv 9.19 > 7.0)  score=1219.12  (1s)
+  m=(0, 1, 0) seed=  808  infeasible (launch_dv 9.19 > 7.0)  score=1219.12  (2s)
+  m=(0, 1, 0) seed= 2024  infeasible (launch_dv 9.19 > 7.0)  score=1219.12  (1s)
+  m=(0, 1, 0) seed= 7777  infeasible (launch_dv 9.19 > 7.0)  score=1219.12  (1s)
+  m=(0, 1, 0) seed=12345  infeasible (launch_dv 9.19 > 7.0)  score=1219.12  (2s)
+  m=(0, 1, 0) seed=   99  infeasible (launch_dv 9.19 > 7.0)  score=1219.12  (1s)
+  m=(0, 0, 1) seed=   13  infeasible (launch_dv 9.19 > 7.0)  score=1219.12  (2s)
+  m=(0, 0, 1) seed=   42  infeasible (launch_dv 9.19 > 7.0)  score=1219.12  (1s)
+  m=(0, 0, 1) seed=   91  infeasible (launch_dv 9.19 > 7.0)  score=1219.12  (1s)
+  m=(0, 0, 1) seed=  137  infeasible (launch_dv 9.19 > 7.0)  score=1219.12  (2s)
+  m=(0, 0, 1) seed=  314  infeasible (launch_dv 9.19 > 7.0)  score=1219.12  (1s)
+  m=(0, 0, 1) seed=  808  infeasible (launch_dv 9.19 > 7.0)  score=1219.12  (2s)
+  m=(0, 0, 1) seed= 2024  infeasible (launch_dv 9.19 > 7.0)  score=1219.12  (1s)
+  m=(0, 0, 1) seed= 7777  infeasible (launch_dv 9.19 > 7.0)  score=1219.12  (1s)
+  m=(0, 0, 1) seed=12345  infeasible (launch_dv 9.19 > 7.0)  score=1219.12  (2s)
+  m=(0, 0, 1) seed=   99  infeasible (launch_dv 9.19 > 7.0)  score=1219.12  (1s)
+  m=(1, 1, 0) seed=   13  launch_dv=7.00  post_dv=12.719  arr=2041 DEC 20 16:15:09  tof_A2A3=1.34yr  (7s)
+  m=(1, 1, 0) seed=   42  launch_dv=7.00  post_dv=12.719  arr=2041 DEC 20 15:44:52  tof_A2A3=1.34yr  (7s)
+  m=(1, 1, 0) seed=   91  launch_dv=7.00  post_dv=12.719  arr=2041 DEC 20 17:11:50  tof_A2A3=1.34yr  (7s)
+  m=(1, 1, 0) seed=  137  launch_dv=7.00  post_dv=12.719  arr=2041 DEC 20 15:38:07  tof_A2A3=1.34yr  (7s)
+  m=(1, 1, 0) seed=  314  launch_dv=7.00  post_dv=12.719  arr=2041 DEC 20 15:11:10  tof_A2A3=1.34yr  (8s)
+  m=(1, 1, 0) seed=  808  launch_dv=7.00  post_dv=12.719  arr=2041 DEC 20 15:46:51  tof_A2A3=1.34yr  (8s)
+  m=(1, 1, 0) seed= 2024  launch_dv=7.00  post_dv=12.719  arr=2041 DEC 20 15:58:00  tof_A2A3=1.34yr  (7s)
+  m=(1, 1, 0) seed= 7777  launch_dv=7.00  post_dv=12.719  arr=2041 DEC 20 15:31:04  tof_A2A3=1.34yr  (8s)
+  m=(1, 1, 0) seed=12345  launch_dv=7.00  post_dv=12.719  arr=2041 DEC 20 15:37:21  tof_A2A3=1.34yr  (8s)
+  m=(1, 1, 0) seed=   99  launch_dv=7.00  post_dv=12.719  arr=2041 DEC 20 16:28:50  tof_A2A3=1.34yr  (7s)
+  m=(1, 0, 1) seed=   13  launch_dv=7.00  post_dv=21.977  arr=2042 OCT 12 05:18:19  tof_A2A3=6.52yr  (15s)
+  m=(1, 0, 1) seed=   42  launch_dv=7.00  post_dv=21.978  arr=2042 OCT 12 07:38:19  tof_A2A3=6.52yr  (16s)
+  m=(1, 0, 1) seed=   91  launch_dv=7.00  post_dv=21.978  arr=2042 OCT 12 05:16:57  tof_A2A3=6.52yr  (15s)
+  m=(1, 0, 1) seed=  137  launch_dv=7.00  post_dv=21.978  arr=2042 OCT 12 10:02:01  tof_A2A3=6.52yr  (15s)
+  m=(1, 0, 1) seed=  314  launch_dv=7.00  post_dv=21.978  arr=2042 OCT 12 05:54:24  tof_A2A3=6.52yr  (15s)
+  m=(1, 0, 1) seed=  808  launch_dv=7.00  post_dv=21.978  arr=2042 OCT 12 09:19:39  tof_A2A3=6.52yr  (15s)
+  m=(1, 0, 1) seed= 2024  launch_dv=7.00  post_dv=21.977  arr=2042 OCT 12 06:59:53  tof_A2A3=6.52yr  (15s)
+  m=(1, 0, 1) seed= 7777  launch_dv=7.00  post_dv=21.977  arr=2042 OCT 12 08:09:28  tof_A2A3=6.52yr  (15s)
+  m=(1, 0, 1) seed=12345  launch_dv=7.00  post_dv=21.978  arr=2042 OCT 12 06:00:28  tof_A2A3=6.52yr  (15s)
+  m=(1, 0, 1) seed=   99  launch_dv=7.00  post_dv=21.977  arr=2042 OCT 12 05:54:51  tof_A2A3=6.52yr  (15s)
+  m=(0, 1, 1) seed=   13  infeasible (launch_dv 9.19 > 7.0)  score=1219.12  (2s)
+  m=(0, 1, 1) seed=   42  infeasible (launch_dv 9.19 > 7.0)  score=1219.12  (1s)
+  m=(0, 1, 1) seed=   91  infeasible (launch_dv 9.19 > 7.0)  score=1219.12  (1s)
+  m=(0, 1, 1) seed=  137  infeasible (launch_dv 9.19 > 7.0)  score=1219.12  (1s)
+  m=(0, 1, 1) seed=  314  infeasible (launch_dv 9.19 > 7.0)  score=1219.12  (1s)
+  m=(0, 1, 1) seed=  808  infeasible (launch_dv 9.19 > 7.0)  score=1219.12  (2s)
+  m=(0, 1, 1) seed= 2024  infeasible (launch_dv 9.19 > 7.0)  score=1219.12  (1s)
+  m=(0, 1, 1) seed= 7777  infeasible (launch_dv 9.19 > 7.0)  score=1219.12  (1s)
+  m=(0, 1, 1) seed=12345  infeasible (launch_dv 9.19 > 7.0)  score=1219.12  (1s)
+  m=(0, 1, 1) seed=   99  infeasible (launch_dv 9.19 > 7.0)  score=1219.12  (1s)
+  m=(1, 1, 1) seed=   13  launch_dv=7.00  post_dv=60.769  arr=2042 OCT 25 12:08:32  tof_A2A3=4.21yr  (16s)
+  m=(1, 1, 1) seed=   42  launch_dv=7.00  post_dv=60.768  arr=2042 OCT 25 12:08:25  tof_A2A3=4.21yr  (16s)
+  m=(1, 1, 1) seed=   91  launch_dv=7.00  post_dv=60.769  arr=2042 OCT 25 12:06:23  tof_A2A3=4.21yr  (16s)
+  m=(1, 1, 1) seed=  137  launch_dv=7.00  post_dv=60.771  arr=2042 OCT 25 12:09:34  tof_A2A3=4.21yr  (16s)
+  m=(1, 1, 1) seed=  314  launch_dv=7.00  post_dv=60.771  arr=2042 OCT 25 12:08:28  tof_A2A3=4.22yr  (16s)
+  m=(1, 1, 1) seed=  808  launch_dv=7.00  post_dv=60.774  arr=2042 OCT 25 12:03:45  tof_A2A3=4.22yr  (16s)
+  m=(1, 1, 1) seed= 2024  launch_dv=7.00  post_dv=60.770  arr=2042 OCT 25 12:06:01  tof_A2A3=4.21yr  (16s)
+  m=(1, 1, 1) seed= 7777  launch_dv=7.00  post_dv=60.769  arr=2042 OCT 25 12:06:54  tof_A2A3=4.21yr  (16s)
+  m=(1, 1, 1) seed=12345  launch_dv=7.00  post_dv=60.769  arr=2042 OCT 25 12:09:40  tof_A2A3=4.21yr  (16s)
+  m=(1, 1, 1) seed=   99  launch_dv=7.00  post_dv=60.770  arr=2042 OCT 25 12:10:55  tof_A2A3=4.21yr  (16s)
+
+Total DE time: 512s (80 runs)
+
+==============================================================================
+ SURROGATE BEST
+==============================================================================
+  Ordering         : PARTHENOPE → PSYCHE → THEMIS
+  Architecture     : direct
+  m_revs           : (1, 1, 0)
+  Launch dv (excl) : 7.0000 km/s
+  Post-launch dv   : 12.7189 km/s
+  Final mass (sur.): 987.2 kg
+    Earth launch        : 2029 JUL 29 04:56:36
+    Arrive PARTHENOPE   : 2033 APR 26 23:31:08
+    Depart PARTHENOPE   : 2033 JUL 27 07:01:09
+    Arrive PSYCHE       : 2040 MAY 19 09:08:34
+    Depart PSYCHE       : 2040 AUG 18 16:38:34
+    Arrive THEMIS       : 2041 DEC 20 15:31:04
+
+Running full Sims-Flanagan verification...
+  LT leg: TOF=3.74yr  dv_ceil=23.64  dv_int=6.17  m_f=1224  pos_err=2.4e+01  vel_err=0.000  ✓
+  LT leg: TOF=6.81yr  dv_ceil=52.67  dv_int=2.87  m_f=1114  pos_err=3.6e+00  vel_err=0.000  ✓
+  LT leg: TOF=1.34yr  dv_ceil=11.38  dv_int=3.71  m_f=986  pos_err=5.0e+01  vel_err=0.000  ✓
+Verification took 16.9s
+
+==============================================================================
+ VERIFIED RESULT (close-approach exploit)
+==============================================================================
+  Ordering             : PARTHENOPE → PSYCHE → THEMIS
+  Architecture         : direct (no Mars flyby)
+  Launch dv (excl obj) : 7.0000 km/s
+  Post-launch dv (LT)  : 12.7499 km/s
+  Final mass           : 986.2 kg of 1500
+  All legs converged   : True
+
+  Mission timeline:
+    Earth launch        : 2029 JUL 29 04:56:36
+    Arrive PARTHENOPE   : 2033 APR 26 23:31:08
+    Depart PARTHENOPE   : 2033 JUL 27 07:01:09
+    Arrive PSYCHE       : 2040 MAY 19 09:08:34
+    Depart PSYCHE       : 2040 AUG 18 16:38:34
+    Arrive THEMIS       : 2041 DEC 20 15:31:04
+    Total duration       : 12.40 yr
+    Psyche-Themis sep at Themis arrival: 0.664 AU
+    Themis arrival vs close approach: +239 days
+
+  Low-thrust legs:
+    Earth→A1            TOF= 3.74 yr  dv_int= 6.173 km/s  m: 1500.0 → 1224.3 kg  pos_err=2.4e+01 km  OK
+    A1→A2               TOF= 6.81 yr  dv_int= 2.867 km/s  m: 1224.3 → 1114.1 kg  pos_err=3.6e+00 km  OK
+    A2→A3               TOF= 1.34 yr  dv_int= 3.710 km/s  m: 1114.1 →  986.2 kg  pos_err=5.0e+01 km  OK
+
+  Thrust profile per leg:
+    Earth→A1            mean=  71.5 mN  peak= 144.9 mN  duty=100.0%
+    A1→A2               mean=  15.6 mN  peak=  32.5 mN  duty= 33.3%
+    A2→A3               mean=  92.5 mN  peak= 127.0 mN  duty=100.0%
+
+==============================================================================
+ COMPARISON vs v2 (saved baseline)
+==============================================================================
+                                 v2 baseline       close-appr       delta
+  post-launch dv (km/s)               13.105           12.750      -0.355
+  mission duration (yr)                16.79            12.40       -4.40
+
+Saved: /home/rebnoob/project/Python_Consolidated/gcp/../../optimal_asteroid_paths/pkl/ppt_lt_chain_close_approach.pkl

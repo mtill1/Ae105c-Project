@@ -23,8 +23,10 @@ os.chdir(os.path.dirname(_HERE))
 
 from core import load_kernels, YEAR
 
-PKL = 'optimal_asteroid_paths/pkl/ppt_lt_chain_v2.pkl'
-OUT = 'Renders/ppt_lt_chain_thrust_vs_time_v2.png'
+_DEFAULT_PKL = 'optimal_asteroid_paths/pkl/ppt_lt_chain_v2.pkl'
+_DEFAULT_OUT = 'Renders/ppt_lt_chain_thrust_vs_time_v2.png'
+PKL = sys.argv[1] if len(sys.argv) > 1 else _DEFAULT_PKL
+OUT = sys.argv[2] if len(sys.argv) > 2 else _DEFAULT_OUT
 
 
 def main():
@@ -32,7 +34,7 @@ def main():
     with open(PKL, 'rb') as f:
         data = pickle.load(f)
 
-    triplet = data['best_ordering']
+    triplet = data.get('best_ordering') or data.get('ordering')
     v = data['verified']
     cfg = data['config']
     eps = v['epochs']

@@ -1,0 +1,437 @@
+"""
+core.py — Foundational utilities for asteroid trajectory selection.
+
+Uses pykep (ESA) for Lambert solving, orbit propagation, and flyby computation.
+Uses spiceypy for SPICE kernel management and asteroid ephemerides.
+
+All internal units: km, km/s, km^3/s^2 (SPICE convention).
+Conversions to/from SI (pykep) are handled inside wrapper functions.
+"""
+
+import os
+import glob
+import numpy as np
+import pykep as pk
+import spiceypy
+
+# =============================================================================
+# CONSTANTS (in seconds, matching SPICE ephemeris time)
+# =============================================================================
+MINUTE = 60
+HOUR = 60 * MINUTE
+DAY = 24 * HOUR
+WEEK = 7 * DAY
+MONTH = 30.4375 * DAY       # average month (365.25/12)
+YEAR = 365.25 * DAY          # Julian year
+
+MAX_MISSION_DURATION = 14 * YEAR  # hard cap (must stay within BSP coverage to 2050)
+
+# Unit conversion factors
+_KM2M = 1e3
+_M2KM = 1e-3
+
+# Gravitational parameters in km^3/s^2 (SPICE convention)
+MU_SUN = pk.MU_SUN * 1e-9     # m^3/s^2 -> km^3/s^2
+MU_EARTH = pk.MU_EARTH * 1e-9
+EARTH_RADIUS = pk.EARTH_RADIUS * _M2KM  # m -> km
+
+
+# =============================================================================
+# LAMBERT SOLVER (wrapper around pykep.lambert_problem)
+# =============================================================================
+
+def solve_lambert(r1_km, r2_km, tof_days, m, mu_km3s2):
+    """Solve Lambert's problem using pykep.
+
+    Parameters
+    ----------
+    r1_km, r2_km : array (3,) — position vectors [km]
+    tof_days : float — time of flight [days]. Negative => long-way (clockwise).
+    m : int — number of complete revolutions. Negative => left branch.
+    mu_km3s2 : float — gravitational parameter [km^3/s^2]
+
+    Returns
+    -------
+    V1, V2 : ndarray (3,) — terminal velocities [km/s]
+    exitflag : int — 1 = success, -1 = no solution
+    """
+    r1_m = np.asarray(r1_km, dtype=float) * _KM2M
+    r2_m = np.asarray(r2_km, dtype=float) * _KM2M
+    tof_sec = abs(tof_days) * DAY
+    mu_m3s2 = mu_km3s2 * 1e9
+
+    cw = bool(tof_days < 0)
+    multi_revs = abs(int(m))
+
+    try:
+        lp = pk.lambert_problem(
+            [float(x) for x in r1_m], [float(x) for x in r2_m],
+            float(tof_sec), float(mu_m3s2),
+            cw, multi_revs,
+        )
+
+        v1_all = lp.get_v1()
+        v2_all = lp.get_v2()
+
+        if multi_revs == 0:
+            idx = 0
+        else:
+            if m > 0:
+                idx = 2 * multi_revs - 1
+            else:
+                idx = 2 * multi_revs
+            if idx >= len(v1_all):
+                return np.zeros(3), np.zeros(3), -1
+
+        v1 = np.array(v1_all[idx]) * _M2KM
+        v2 = np.array(v2_all[idx]) * _M2KM
+        return v1, v2, 1
+
+    except Exception:
+        return np.zeros(3), np.zeros(3), -1
+
+
+def solve_lambert_best(r1_km, r2_km, tof_days, mu_km3s2, max_revs=2):
+    """Solve Lambert trying multiple revolutions and both directions, return best.
+
+    Tries m=0,1,...,max_revs for both short-way and long-way, and picks the
+    solution with the lowest total delta-v (||V1-V_body1|| + ||V2-V_body2|| proxy:
+    we minimize ||V1||+||V2|| as a heuristic since body velocities aren't known here).
+
+    Returns (V1, V2, exitflag) for the best solution found.
+    """
+    r1_m = np.asarray(r1_km, dtype=float) * _KM2M
+    r2_m = np.asarray(r2_km, dtype=float) * _KM2M
+    tof_sec = abs(tof_days) * DAY
+    mu_m3s2 = mu_km3s2 * 1e9
+
+    best_v1, best_v2, best_cost = np.zeros(3), np.zeros(3), np.inf
+    found = False
+
+    for cw in [False, True]:
+        try:
+            lp = pk.lambert_problem(
+                [float(x) for x in r1_m], [float(x) for x in r2_m],
+                float(tof_sec), float(mu_m3s2),
+                cw, max_revs,
+            )
+            v1_all = lp.get_v1()
+            v2_all = lp.get_v2()
+            for idx in range(len(v1_all)):
+                v1 = np.array(v1_all[idx]) * _M2KM
+                v2 = np.array(v2_all[idx]) * _M2KM
+                cost = np.linalg.norm(v1) + np.linalg.norm(v2)
+                if cost < best_cost:
+                    best_cost = cost
+                    best_v1, best_v2 = v1, v2
+                    found = True
+        except Exception:
+            continue
+
+    return best_v1, best_v2, (1 if found else -1)
+
+
+# =============================================================================
+# TWO-BODY PROPAGATION (wrapper around pykep.propagate_lagrangian)
+# =============================================================================
+
+def propagate_two_body(r_km, v_km_s, tof_sec, mu_km3s2):
+    """Propagate a two-body trajectory to a single final time.
+
+    Returns (r_final_km, v_final_km_s) as numpy arrays.
+    """
+    r_m = list(np.asarray(r_km, dtype=float) * _KM2M)
+    v_ms = list(np.asarray(v_km_s, dtype=float) * _KM2M)
+    mu_m3s2 = mu_km3s2 * 1e9
+
+    rf, vf = pk.propagate_lagrangian(r0=r_m, v0=v_ms, tof=float(tof_sec), mu=mu_m3s2)
+    return np.array(rf) * _M2KM, np.array(vf) * _M2KM
+
+
+def two_body_sim(t_final, x_0, mu_km3s2, n_steps=200):
+    """Propagate a two-body trajectory and return states at many times.
+
+    Drop-in replacement for the old scipy solve_ivp version.
+    Returns (X, T) where X is (N, 6) array [km, km/s] and T is (N,) array [s].
+    """
+    r_m = list(np.asarray(x_0[0:3], dtype=float) * _KM2M)
+    v_ms = list(np.asarray(x_0[3:6], dtype=float) * _KM2M)
+    mu_m3s2 = mu_km3s2 * 1e9
+
+    tofs = np.linspace(0, t_final, n_steps).tolist()
+
+    X = np.zeros((len(tofs), 6))
+    for i, tof in enumerate(tofs):
+        rf, vf = pk.propagate_lagrangian(r0=r_m, v0=v_ms, tof=float(tof), mu=mu_m3s2)
+        X[i, 0:3] = np.array(rf) * _M2KM
+        X[i, 3:6] = np.array(vf) * _M2KM
+
+    T = np.array(tofs)
+    return X, T
+
+
+# =============================================================================
+# FLYBY DELTA-V (wrapper around pykep.fb_dv)
+# =============================================================================
+
+# Tolerance for "ballistic" flyby — |v_inf_in| must equal |v_inf_out| within
+# this many km/s. Anything beyond this implies a powered burn at periapsis,
+# which we reject as a project-wide constraint: a real GA has powered Δv ≈ 0.
+BALLISTIC_VINF_TOLERANCE_KMS = 0.05
+
+
+def compute_flyby_dv(v_sc_in_km_s, v_sc_out_km_s, v_planet_km_s,
+                     mu_planet_km3s2, safe_radius_km):
+    """Compute the delta-v needed for a flyby. **Ballistic-only**.
+
+    For a real (unpowered) gravity assist, |v_inf_in| must equal |v_inf_out|
+    and the required turn must fit within Mars/Moon's natural maximum at the
+    safe periapsis altitude. If either constraint fails, return a 1000 km/s
+    penalty so the optimizer rejects the trajectory.
+
+    Parameters
+    ----------
+    v_sc_in_km_s : array (3,) — spacecraft incoming velocity [km/s]
+    v_sc_out_km_s : array (3,) — spacecraft outgoing velocity [km/s]
+    v_planet_km_s : array (3,) — planet velocity [km/s]
+    mu_planet_km3s2 : float — planet's gravitational parameter [km^3/s^2]
+    safe_radius_km : float — minimum flyby periapsis [km]
+
+    Returns
+    -------
+    dv_km_s : float — 0 if the ballistic flyby is feasible, 1e3 otherwise.
+    """
+    v_rel_in = (np.asarray(v_sc_in_km_s) - np.asarray(v_planet_km_s)) * _KM2M
+    v_rel_out = (np.asarray(v_sc_out_km_s) - np.asarray(v_planet_km_s)) * _KM2M
+    mu_m3s2 = mu_planet_km3s2 * 1e9
+    safe_r_m = safe_radius_km * _KM2M
+
+    # ---- Constraint 1: energy conservation (ballistic only) ----
+    # A real gravity assist has |v_inf_in| = |v_inf_out|. Any mismatch is a
+    # powered flyby (engine burn at periapsis), which we forbid.
+    v_in_mag  = np.linalg.norm(v_rel_in)   # m/s
+    v_out_mag = np.linalg.norm(v_rel_out)
+    if abs(v_in_mag - v_out_mag) > BALLISTIC_VINF_TOLERANCE_KMS * _KM2M:
+        return 1e3  # km/s — powered flyby rejected
+
+    # ---- Constraint 2: geometric turn-angle feasibility ----
+    # Maximum natural turn at safe periapsis is the sum of two half-turns:
+    #   δ_max(r_p) = arcsin(1/(1+r_p·v_in²/μ)) + arcsin(1/(1+r_p·v_out²/μ))
+    # Smaller r_p gives larger δ_max, so check at the safe (minimum) r_p.
+    if v_in_mag > 1e-10 and v_out_mag > 1e-10:
+        cosd = np.clip(np.dot(v_rel_in, v_rel_out) / (v_in_mag * v_out_mag), -1, 1)
+        delta_required = np.arccos(cosd)
+        sin_in_max  = min(1.0, 1.0 / (1.0 + safe_r_m * v_in_mag**2  / mu_m3s2))
+        sin_out_max = min(1.0, 1.0 / (1.0 + safe_r_m * v_out_mag**2 / mu_m3s2))
+        delta_max = np.arcsin(sin_in_max) + np.arcsin(sin_out_max)
+        if delta_required > delta_max + 1e-6:
+            return 1e3  # km/s — turn unreachable at safe altitude
+
+    # If we got here, |v_in| ≈ |v_out| AND turn fits — purely ballistic. No Δv.
+    return 0.0
+
+    # (Legacy fallback retained below — never reached when both constraints
+    # pass above; kept for reference and to preserve the powered-Δv math in
+    # case a future opt-in flag wants to allow powered flybys.)
+    if hasattr(pk, 'fb_dv'):
+        dv_ms = pk.fb_dv(list(v_rel_in), list(v_rel_out), mu_m3s2, safe_r_m)
+    else:
+        # Manual powered flyby delta-v
+        v_in_mag = np.linalg.norm(v_rel_in)
+        v_out_mag = np.linalg.norm(v_rel_out)
+        if v_in_mag < 1e-10 or v_out_mag < 1e-10:
+            return 0.0
+        cos_delta = np.clip(np.dot(v_rel_in, v_rel_out) / (v_in_mag * v_out_mag), -1, 1)
+        delta_des = np.arccos(cos_delta)
+        sin_arg = min(1.0, 1.0 / (1.0 + safe_r_m * v_in_mag**2 / mu_m3s2))
+        delta_max = 2 * np.arcsin(sin_arg)
+        if delta_des <= delta_max and abs(v_in_mag - v_out_mag) < 1e-6:
+            return 0.0
+        v_p_in = np.sqrt(v_in_mag**2 + 2 * mu_m3s2 / safe_r_m)
+        v_p_out = np.sqrt(v_out_mag**2 + 2 * mu_m3s2 / safe_r_m)
+        dv_ms = abs(v_p_out - v_p_in)
+    return dv_ms * _M2KM
+
+
+# =============================================================================
+# FLYBY GEOMETRY AUDIT (post-hoc verification)
+# =============================================================================
+
+def audit_flyby_geometry(et_launch, et_flyby, et_arr_a1, a1_id, arch,
+                          m_e_to_fb: int = 0, m_fb_to_a1: int = 0):
+    """Independent geometric audit of a Mars/Moon gravity assist.
+
+    `m_e_to_fb` and `m_fb_to_a1` set the Lambert revolution count for each
+    leg — must match what the optimizer used or the audit will flag a
+    different trajectory than the one that's actually flown.
+
+    Re-derives v_inf vectors from a fresh Lambert solve, then checks whether
+    the required total turn angle is achievable at the safe periapsis altitude.
+    For asymmetric (powered) flybys |v_inf_in| ≠ |v_inf_out|, the maximum total
+    turn is the sum of two half-turns, each computed at its own |v_inf|:
+        δ_max = arcsin(1/(1 + r_p · v_in²/μ)) + arcsin(1/(1 + r_p · v_out²/μ))
+
+    Parameters
+    ----------
+    et_launch, et_flyby, et_arr_a1 : float — SPICE epochs (seconds past J2000)
+    a1_id : str — SPICE ID for the first asteroid after the flyby
+    arch  : str — 'moon' or 'mars'
+
+    Returns
+    -------
+    dict with keys:
+        feasible        : bool
+        v_inf_in_kms,  v_inf_out_kms        : magnitudes (km/s)
+        v_inf_in_vec,  v_inf_out_vec        : 3-vectors (lists)
+        turn_angle_deg                       : required total turn
+        turn_max_deg                         : maximum gravity-only turn at safe r_p
+        periapsis_alt_km                     : altitude implied by the geometry
+        safe_periapsis_alt_km                : the project's minimum (200 km Mars, 100 km Moon)
+        body_radius_km                       : surface radius of the flyby body
+        energy_residual_kms                  : |v_inf_in| − |v_inf_out|
+    """
+    from optimization import FLYBY_BODIES   # avoid circular import at module load
+    fb = FLYBY_BODIES[arch]
+    fb_id = fb['id']
+
+    earth_r, _    = get_state('399', et_launch)
+    fb_r,  fb_v   = get_state(fb_id, et_flyby)
+    a1_r,  _      = get_state(a1_id, et_arr_a1)
+
+    _, V2_in,  ef0 = solve_lambert(earth_r, fb_r, (et_flyby - et_launch)/DAY, m_e_to_fb,  MU_SUN)
+    V1_out, _, ef1 = solve_lambert(fb_r,    a1_r, (et_arr_a1- et_flyby )/DAY, m_fb_to_a1, MU_SUN)
+    if ef0 != 1 or ef1 != 1:
+        return {'feasible': False, 'reason': 'lambert_fail'}
+
+    v_inf_in  = V2_in  - fb_v
+    v_inf_out = V1_out - fb_v
+    vin_mag   = float(np.linalg.norm(v_inf_in))
+    vout_mag  = float(np.linalg.norm(v_inf_out))
+    cosd      = np.clip(np.dot(v_inf_in, v_inf_out)/(vin_mag*vout_mag), -1, 1)
+    delta     = float(np.degrees(np.arccos(cosd)))
+
+    mu_km3s2  = get_mu(fb['mu_body'])
+    R_km      = get_radius(fb['radii_body'])
+    safe_r_km = R_km + fb['min_alt']
+
+    sin_in_half  = min(1.0, 1.0/(1.0 + safe_r_km * vin_mag**2  / mu_km3s2))
+    sin_out_half = min(1.0, 1.0/(1.0 + safe_r_km * vout_mag**2 / mu_km3s2))
+    delta_max_deg = float(np.degrees(np.arcsin(sin_in_half) + np.arcsin(sin_out_half)))
+
+    energy_residual_kms = abs(vin_mag - vout_mag)
+    geometric_ok = delta <= delta_max_deg + 1e-6
+    ballistic_ok = energy_residual_kms <= BALLISTIC_VINF_TOLERANCE_KMS
+    feasible = bool(geometric_ok and ballistic_ok)
+
+    # Periapsis altitude (ballistic-symmetric approximation; underestimates h_p
+    # for highly asymmetric powered flybys but the boundary case h_p == min_alt
+    # is exact when delta == delta_max_deg).
+    sin_half = np.sin(np.radians(delta/2.0))
+    if sin_half > 0:
+        v_avg = (vin_mag + vout_mag) / 2.0
+        rp_req_km = (mu_km3s2 / v_avg**2) * (1.0/sin_half - 1.0)
+        h_p_km = rp_req_km - R_km
+    else:
+        h_p_km = float('inf')
+
+    return {
+        'feasible':              feasible,
+        'geometric_ok':          bool(geometric_ok),
+        'ballistic_ok':          bool(ballistic_ok),
+        'v_inf_in_kms':          vin_mag,
+        'v_inf_out_kms':         vout_mag,
+        'v_inf_in_vec':          v_inf_in.tolist(),
+        'v_inf_out_vec':         v_inf_out.tolist(),
+        'turn_angle_deg':        delta,
+        'turn_max_deg':          delta_max_deg,
+        'periapsis_alt_km':      h_p_km,
+        'safe_periapsis_alt_km': fb['min_alt'],
+        'body_radius_km':        R_km,
+        'energy_residual_kms':   float(vin_mag - vout_mag),
+    }
+
+
+# =============================================================================
+# SPICE KERNEL LOADER
+# =============================================================================
+
+def load_kernels(bsp_folder_name, generic_kernels_path):
+    """Load generic + project-specific SPICE kernels, return asteroid list.
+
+    Returns list of dicts with 'ID' (int), 'NAME' (str) keys.
+    """
+    spiceypy.furnsh(os.path.join(generic_kernels_path, 'lsk', 'naif0012.tls'))
+    spiceypy.furnsh(os.path.join(generic_kernels_path, 'spk', 'satellites', 'jup310.bsp'))
+    spiceypy.furnsh(os.path.join(generic_kernels_path, 'spk', 'planets', 'de430.bsp'))
+    spiceypy.furnsh(os.path.join(generic_kernels_path, 'pck', 'gm_de431.tpc'))
+    spiceypy.furnsh(os.path.join(generic_kernels_path, 'pck', 'pck00010.tpc'))
+
+    bsp_files = sorted(glob.glob(os.path.join(bsp_folder_name, '*.bsp')))
+    asteroid_list = []
+    for bsp_path in bsp_files:
+        spiceypy.furnsh(bsp_path)
+        id_cell = spiceypy.spkobj(bsp_path)
+        # Extract integer NAIF IDs from the SpiceCell
+        int_ids = [id_cell[i] for i in range(spiceypy.card(id_cell))]
+        name = os.path.splitext(os.path.basename(bsp_path))[0]
+        asteroid_list.append({'ID': int_ids[0] if int_ids else 0, 'NAME': name})
+    return asteroid_list
+
+
+def get_state(body_id, et):
+    """Get heliocentric state [r_km (3,), v_km_s (3,)] at ephemeris time et."""
+    state, _ = spiceypy.spkezr(str(body_id), et, 'ECLIPJ2000', 'NONE', '10')
+    return np.array(state[0:3]), np.array(state[3:6])
+
+
+def get_mu(body_id):
+    """Get gravitational parameter for a body [km^3/s^2]."""
+    _, vals = spiceypy.bodvcd(int(body_id), 'GM', 10)
+    return vals[0]
+
+
+def get_radius(body_id):
+    """Get mean radius for a body [km]."""
+    _, vals = spiceypy.bodvcd(int(body_id), 'RADII', 10)
+    return vals[0]
+
+
+# =============================================================================
+# INPUT UNPACKING
+# =============================================================================
+
+def unpack_input(input_vec, launch_range):
+    """Unpack 6-element optimization vector into epoch times (seconds)."""
+    s = YEAR * input_vec
+    et_launch = s[0] + launch_range[0]
+    et_arrive_1 = et_launch + s[1]
+    et_stay_1 = et_arrive_1 + s[2]
+    et_arrive_2 = et_stay_1 + s[3]
+    et_stay_2 = et_arrive_2 + s[4]
+    et_arrive_3 = et_stay_2 + s[5]
+    return et_launch, et_arrive_1, et_stay_1, et_arrive_2, et_stay_2, et_arrive_3
+
+
+def unpack_mars_input(input_vec, launch_range):
+    """Unpack 7-element optimization vector (with Mars flyby) into epoch times."""
+    s = YEAR * input_vec
+    et_launch = s[0] + launch_range[0]
+    et_mars = et_launch + s[1]
+    et_arrive_1 = et_mars + s[2]
+    et_stay_1 = et_arrive_1 + s[3]
+    et_arrive_2 = et_stay_1 + s[4]
+    et_stay_2 = et_arrive_2 + s[5]
+    et_arrive_3 = et_stay_2 + s[6]
+    return et_launch, et_mars, et_arrive_1, et_stay_1, et_arrive_2, et_stay_2, et_arrive_3
+
+
+# =============================================================================
+# ASTEROID NAME LOOKUP
+# =============================================================================
+
+def get_id_from_asteroid_name(asteroid_list, name):
+    """Search asteroid_list for matching NAME, return ID or -1."""
+    for asteroid in asteroid_list:
+        if asteroid['NAME'] == name:
+            return asteroid['ID']
+    return -1

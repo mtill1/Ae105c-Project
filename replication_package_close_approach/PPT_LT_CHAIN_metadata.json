@@ -1,0 +1,94 @@
+{
+  "mission": {
+    "name": "PARTHENOPE -> PSYCHE -> THEMIS LT-chain",
+    "project": "Ae105c (Caltech / Pomona College)",
+    "architecture": "direct (no flyby) + all-LT post-launch",
+    "triplet": [
+      "PARTHENOPE",
+      "PSYCHE",
+      "THEMIS"
+    ],
+    "asteroid_compositions": {
+      "PARTHENOPE": "S-type",
+      "PSYCHE": "X/M-type",
+      "THEMIS": "C-type"
+    }
+  },
+  "reference_frame": {
+    "frame_name": "ECLIPJ2000",
+    "description": "Heliocentric, Earth-Mean-Equator/Equinox of J2000.0 ecliptic",
+    "center_body": "10 (Sun barycenter)",
+    "time_system": "SPICE Ephemeris Time (TDB)",
+    "units": "km, km/s, km^3/s^2"
+  },
+  "spacecraft": {
+    "launch_mass_kg": 3000.0,
+    "lt_chain_initial_mass_kg": 1500.0,
+    "final_mass_kg": 986.1639620581474,
+    "electric_propulsion": {
+      "isp_s": 3100.0,
+      "thrust_max_N": 0.3
+    }
+  },
+  "optimization_constraints": {
+    "launch_dv_max_kms": 7.0,
+    "mission_max_yr": 30.0,
+    "stay_min_months": 3.0,
+    "flyby": "none (direct architecture won)",
+    "objective": "minimize post-launch integrated delta-v",
+    "launch_dv_in_objective": false
+  },
+  "optimizer": {
+    "method": "scipy.optimize.differential_evolution",
+    "maxiter": 600,
+    "popsize": 30,
+    "lambert_m_revs": {
+      "tried": "5 combos \u00d7 6 seeds \u00d7 2 architectures (direct + Mars GA)",
+      "winning_value": [
+        1,
+        1,
+        0
+      ],
+      "winning_legs": "(Earth->PARTHENOPE: m=1, PARTHENOPE->PSYCHE: m=1, PSYCHE->THEMIS: m=0)"
+    },
+    "lt_solver": "Sims-Flanagan, 15 segments per leg, scipy least_squares"
+  },
+  "mission_events_utc": {
+    "earth_launch": "2029-07-29T04:56:35.860",
+    "arrive_PARTHENOPE": "2033-04-26T23:31:08.261",
+    "depart_PARTHENOPE": "2033-07-27T07:01:08.653",
+    "arrive_PSYCHE": "2040-05-19T09:08:33.973",
+    "depart_PSYCHE": "2040-08-18T16:38:34.370",
+    "arrive_THEMIS": "2041-12-20T15:31:03.886",
+    "mission_duration_yr": 12.395456816317276
+  },
+  "delta_v_breakdown_kms": {
+    "launch_impulsive": 7.000000956569695,
+    "leg_earth_to_parthenope": 6.173124237066655,
+    "leg_parthenope_to_psyche": 2.867287119422328,
+    "leg_psyche_to_themis": 3.7095383613833937,
+    "post_launch_total": 12.749949717872376
+  },
+  "asteroid_naif_ids": {
+    "PARTHENOPE": 20000011,
+    "PSYCHE": 20000016,
+    "THEMIS": 20000024
+  },
+  "spice_kernels_required": {
+    "leapseconds": "naif0012.tls (or later)",
+    "planets": "de430.bsp (Sun-Mercury-...-Pluto barycenters)",
+    "satellites": "jup310.bsp (only needed if you also re-derive auxiliary state)",
+    "gm": "gm_de431.tpc",
+    "pck": "pck00010.tpc",
+    "asteroids": "individual SPK files for PARTHENOPE, PSYCHE, THEMIS \u2014 pull from JPL Horizons (https://ssd.jpl.nasa.gov/horizons/) or use the BSPs in NOTABLE_ASTEROID_BSPs/."
+  },
+  "trajectory_dataset": {
+    "n_samples": 959,
+    "first_epoch_utc": "2029-07-29T04:56:35.859859",
+    "last_epoch_utc": "2041-12-20T15:31:03.886227",
+    "spacecraft_naif_id": -1030,
+    "spacecraft_name": "PPT-LT-CHAIN-CA",
+    "mass_first_kg": 1500.0,
+    "mass_last_kg": 986.1639620581474
+  }
+}
